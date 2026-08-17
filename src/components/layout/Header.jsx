@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, Menu, ChevronDown, Check, Plane, Wallet, FileStack, AlertTriangle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { DEMO_USERS } from '../../data/users';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS } from '../../data/permissions';
 import { initialsOf } from '../../utils/format';
 
@@ -17,7 +16,7 @@ const VIEW_TITLES = {
 const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };
 
 export default function Header({ view, setView, setMobileOpen }) {
-  const { currentUser, role, switchRole, pendingActions } = useApp();
+  const { currentUser, role, switchRole, pendingActions, demoRoster } = useApp();
   const [roleOpen, setRoleOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const roleRef = useRef(null);
@@ -79,7 +78,7 @@ export default function Header({ view, setView, setMobileOpen }) {
           {roleOpen && (
             <div className="dropdown-panel">
               <div className="dropdown-header">Demo — switch role</div>
-              {DEMO_USERS.map((u) => (
+              {demoRoster.map((u) => (
                 <button key={u.id} className={`role-option ${u.role === role ? 'active' : ''}`} onClick={() => { switchRole(u.role); setRoleOpen(false); }}>
                   <div className="avatar">{initialsOf(u.name)}</div>
                   <div className="role-option-text">

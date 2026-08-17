@@ -9,13 +9,16 @@ import DocumentsModule from './components/documents/DocumentsModule';
 import AuditLogViewer from './components/audit/AuditLogViewer';
 import UserManagement from './components/admin/UserManagement';
 import { useApp } from './context/AppContext';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Heart, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [view, setView] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { can } = useApp();
+  const { can, loading, loadError } = useApp();
+
+  if (loading) return <LoadingScreen />;
+  if (loadError) return <LoadErrorScreen message={loadError} />;
 
   function renderView() {
     switch (view) {
@@ -56,6 +59,30 @@ function AccessDenied() {
       <ShieldAlert size={40} />
       <h3 style={{ margin: '12px 0 4px' }}>Access restricted</h3>
       <p>Your current role doesn't have permission to view this page.</p>
+    </div>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'var(--bg)' }}>
+      <div className="sidebar-brand-mark" style={{ animation: 'pulse 1.4s ease-in-out infinite' }}><Heart size={17} /></div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 600 }}>Loading Little Angels NPO data…</div>
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+    </div>
+  );
+}
+
+function LoadErrorScreen({ message }) {
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--bg)', padding: 24, textAlign: 'center' }}>
+      <AlertCircle size={36} color="var(--red)" />
+      <h3 style={{ margin: 0 }}>Couldn't load data</h3>
+      <p style={{ color: 'var(--text-muted)', maxWidth: 440, fontSize: 13.5 }}>{message}</p>
+      <p style={{ color: 'var(--text-faint)', maxWidth: 440, fontSize: 12 }}>
+        Check that <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> are set correctly, then reload the page.
+      </p>
+      <button className="btn btn-primary" onClick={() => window.location.reload()}>Reload</button>
     </div>
   );
 }

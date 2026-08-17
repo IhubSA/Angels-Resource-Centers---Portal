@@ -2,16 +2,30 @@
 
 A React single-page application prototype for managing an NPO's Travel, Finance, and Document Control workflows, with full role-based access control (RBAC) across five roles.
 
-This is a **front-end prototype**: all data is mock/in-memory (defined in `src/data/`) and state lives in React context (`src/context/AppContext.jsx`). Nothing is persisted to a server or database — refreshing the page resets the demo data.
+Data is persisted in a real Supabase (Postgres) database — every action (submitting a request, approving, uploading a document, etc.) is written through, and reloading the page fetches the current state from the database. Role access is still controlled client-side via a demo role switcher (see below) rather than real per-person login; the database itself has Row Level Security enabled but with fully open policies, since there's no auth layer yet to check against.
 
 ## Getting started
 
 ```bash
 npm install
+cp .env.example .env
+```
+
+Edit `.env` and fill in your Supabase project's URL and anon key (Project Settings → API in the Supabase dashboard). Then:
+
+```bash
 npm run dev
 ```
 
 Then open the printed local URL (typically `http://localhost:5173`).
+
+## Database
+
+The schema lives in the `npo_portal_*` tables (`npo_portal_users`, `npo_portal_budgets`, `npo_portal_travel_requests`, `npo_portal_travel_expenses`, `npo_portal_invoices`, `npo_portal_documents`, `npo_portal_document_versions`, `npo_portal_audit_log`) — namespaced this way because the Supabase project is shared with a few other apps. All nested sub-objects from the original prototype (`level1`/`level2` approval state, `budgetCheck`, `booking`, `reimbursement`) are stored as `jsonb` columns rather than flattened into separate tables, which keeps the mapping between the database and the UI's existing data shapes simple — see `src/lib/mappers.js`.
+
+`src/lib/supabaseClient.js` creates the Supabase client from the `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` environment variables. `src/context/AppContext.jsx` loads all tables on startup and writes through to Supabase on every action, while still updating local React state immediately for a responsive UI.
+
+**Deploying:** if you're hosting this on Vercel (or anywhere else that builds from source), add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in that platform's environment variables settings — Vite bakes them in at build time, so they need to be set *before* the production build runs, not just available at runtime.
 
 To build a production bundle:
 
@@ -38,8 +52,11 @@ Switching roles re-renders the entire app against a live RBAC permission matrix 
 
 ```
 src/
-  data/            mock data & the RBAC permission matrix
-  context/         AppContext.jsx — all app state & actions (single source of truth)
+  data/permissions.js   the RBAC permission matrix (roles, what each can do)
+  lib/
+    supabaseClient.js    Supabase client + table name constants
+    mappers.js            maps DB rows (snake_case) <-> UI shapes (camelCase)
+  context/         AppContext.jsx — all app state, Supabase reads/writes & actions (single source of truth)
   components/
     layout/        Sidebar, Header (role switcher + notifications)
     dashboard/      Role-customized dashboard
@@ -53,6 +70,8 @@ src/
 ```
 
 ## Try these flows
+
+Since data is now shared through a real database rather than reset-on-refresh mock state, anything you do here is visible to everyone else using this deployment (and stays there until someone changes it again) — worth keeping in mind if several people are poking at the demo at once.
 
 1. **Two-tier travel approval with budget gate**: as Staff, submit a new travel request. Switch to Program Manager to give Level 1 approval (this triggers an automatic budget verification). Switch to Finance Manager to give Level 2 approval, then confirm the booking.
 2. **Budget hold**: `TR-1003` (Cape Town conference) is pre-seeded on budget hold — as Finance Manager, open it in Travel Management and reassign it to a budget line with sufficient funds to release the hold.
