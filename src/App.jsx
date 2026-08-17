@@ -67,7 +67,7 @@ function LoadingScreen() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'var(--bg)' }}>
       <div className="sidebar-brand-mark" style={{ animation: 'pulse 1.4s ease-in-out infinite' }}><Heart size={17} /></div>
-      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 600 }}>Loading Little Angels NPO data…</div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 600 }}>Loading Angels Recourse Centres data…</div>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
     </div>
   );
