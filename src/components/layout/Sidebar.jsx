@@ -26,7 +26,7 @@ export default function Sidebar({ view, setView, collapsed, setCollapsed, mobile
         <div className="sidebar-brand-mark"><Heart size={17} /></div>
         {!collapsed && (
           <div>
-            <div className="sidebar-brand-text">Little Angels</div>
+            <div className="sidebar-brand-text">Angels Resource Centres</div>
             <div className="sidebar-brand-sub">NPO Management System</div>
           </div>
         )}
