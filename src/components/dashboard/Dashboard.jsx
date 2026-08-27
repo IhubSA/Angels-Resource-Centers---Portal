@@ -1,17 +1,18 @@
-import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS } from '../../data/permissions';
+import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, BOARD_TREASURER_THRESHOLD } from '../../data/permissions';
 import StatusBadge from '../common/StatusBadge';
 import { money, formatDate, pct } from '../../utils/format';
 
 const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };
 
 export default function Dashboard({ setView }) {
-  const { currentUser, role, travelRequests, invoices, documents, budgets, auditLog, pendingActions, users } = useApp();
+  const { currentUser, role, travelRequests, invoices, documents, budgets, auditLog, pendingActions, users, scope } = useApp();
 
+  const travelScope = scope('travel');
   const scopedTravel = travelRequests.filter((tr) => {
-    if (role === ROLES.STAFF) return tr.requesterId === currentUser.id;
-    if (role === ROLES.PROGRAM_MANAGER) return tr.department === currentUser.department;
+    if (travelScope === 'own') return tr.requesterId === currentUser.id;
+    if (travelScope === 'department') return tr.department === currentUser.department;
     return true;
   });
 
@@ -41,15 +42,58 @@ export default function Dashboard({ setView }) {
         { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
       ];
     }
-    if (role === ROLES.PROGRAM_MANAGER) {
+    if (role === ROLES.OPERATIONAL_HOD) {
       const teamActive = scopedTravel.filter((tr) => !['completed', 'rejected'].includes(tr.status)).length;
       const teamBudget = budgets.filter((b) => b.department === currentUser.department);
       const teamAvail = teamBudget.reduce((s, b) => s + (b.allocated - b.committed - b.spent), 0);
       return [
-        { label: 'Level 1 Approvals Due', value: pendingActions.filter((a) => a.module === 'Travel').length, sub: 'Team travel requests', icon: AlertCircle, tone: 'amber' },
+        { label: 'HOD Reviews Due', value: pendingActions.filter((a) => a.module === 'Travel').length, sub: 'Team travel requests', icon: AlertCircle, tone: 'amber' },
         { label: 'Team Requests Active', value: teamActive, sub: `${scopedTravel.length} total this year`, icon: Plane, tone: 'blue' },
         { label: 'Team Budget Available', value: money(teamAvail), sub: `${teamBudget.length} budget line(s)`, icon: Wallet, tone: 'green' },
         { label: 'Documents Pending Review', value: docsPendingReview, sub: 'Programs & related', icon: FileStack, tone: 'slate' },
+      ];
+    }
+    if (role === ROLES.TRAVEL_OFFICE) {
+      const qualityDue = travelRequests.filter((tr) => tr.status === 'pending_quality').length;
+      const receiptsDue = travelRequests.filter((tr) => tr.status === 'expense_review').length;
+      const cleared = travelRequests.filter((tr) => ['pending_booking', 'pending_finance_review', 'pending_ceo', 'pending_board', 'cleared_for_travel', 'expense_review', 'pending_payment', 'completed'].includes(tr.status)).length;
+      return [
+        { label: 'Quality Reviews Due', value: qualityDue, sub: 'Links, availability, policy (FIN-04-CHK-01)', icon: Search, tone: 'amber' },
+        { label: 'Receipt Checks Due', value: receiptsDue, sub: 'Post-travel expense claims', icon: Clock, tone: 'amber' },
+        { label: 'Requests Passed Quality', value: cleared, sub: `${travelRequests.length} total requests`, icon: CheckCircle2, tone: 'green' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
+      ];
+    }
+    if (role === ROLES.BOOKKEEPER_FINANCE) {
+      const readyToBook = travelRequests.filter((tr) => tr.status === 'pending_booking').length;
+      const holds = travelRequests.filter((tr) => tr.status === 'finance_hold').length;
+      const booked = travelRequests.filter((tr) => tr.booking.confirmed).length;
+      return [
+        { label: 'Ready to Book', value: readyToBook, sub: 'Passed Travel Office quality review', icon: CalendarCheck, tone: 'amber' },
+        { label: 'Finance Holds to Resolve', value: holds, sub: 'Returned by Finance Manager', icon: AlertCircle, tone: 'red' },
+        { label: 'Trips Booked', value: booked, sub: `${travelRequests.length} total requests`, icon: Plane, tone: 'blue' },
+        { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
+      ];
+    }
+    if (role === ROLES.CEO) {
+      const approvalsDue = travelRequests.filter((tr) => tr.status === 'pending_ceo').length;
+      const highValue = travelRequests.filter((tr) => tr.boardTreasurer.required).length;
+      const pendingInvoices = invoices.filter((i) => i.status === 'pending_level1' || i.status === 'pending_level2').length;
+      return [
+        { label: 'Trip Approvals Due', value: approvalsDue, sub: 'Awaiting CEO sign-off', icon: Crown, tone: 'amber' },
+        { label: 'High-Value Trips', value: highValue, sub: `Above R${BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold`, icon: Gavel, tone: 'slate' },
+        { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
+        { label: 'Invoices In Flight', value: pendingInvoices, sub: `${invoices.length} total invoices`, icon: Wallet, tone: 'blue' },
+      ];
+    }
+    if (role === ROLES.BOARD_TREASURER) {
+      const signOffsDue = travelRequests.filter((tr) => tr.status === 'pending_board').length;
+      const countersigned = travelRequests.filter((tr) => tr.boardTreasurer.status === 'approved').length;
+      return [
+        { label: 'Counter-signatures Due', value: signOffsDue, sub: `Above R${BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold`, icon: Gavel, tone: 'amber' },
+        { label: 'High-Value Trips Signed', value: countersigned, sub: `${travelRequests.filter((tr) => tr.boardTreasurer.required).length} flagged total`, icon: CheckCircle2, tone: 'green' },
+        { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'blue' },
+        { label: 'Audit Trail Entries', value: auditLog.length, sub: 'Full history logged', icon: ShieldCheck, tone: 'slate' },
       ];
     }
     if (role === ROLES.STAFF) {
@@ -75,8 +119,8 @@ export default function Dashboard({ setView }) {
     ];
   }
 
-  const recentActivity = (role === ROLES.STAFF || role === ROLES.PROGRAM_MANAGER)
-    ? auditLog.filter((a) => a.userName === currentUser.name || (role === ROLES.PROGRAM_MANAGER)).slice(0, 6)
+  const recentActivity = travelScope === 'own'
+    ? auditLog.filter((a) => a.userName === currentUser.name).slice(0, 6)
     : auditLog.slice(0, 6);
 
   return (
@@ -151,7 +195,7 @@ export default function Dashboard({ setView }) {
         </div>
       </div>
 
-      {(role === ROLES.ADMIN || role === ROLES.FINANCE_MANAGER || role === ROLES.AUDITOR) && (
+      {[ROLES.ADMIN, ROLES.FINANCE_MANAGER, ROLES.AUDITOR, ROLES.CEO, ROLES.BOARD_TREASURER, ROLES.BOOKKEEPER_FINANCE].includes(role) && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-header">
             <div>

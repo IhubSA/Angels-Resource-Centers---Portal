@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search, Plane } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { ROLES } from '../../data/permissions';
 import StatusBadge from '../common/StatusBadge';
 import EmptyState from '../common/EmptyState';
 import TravelRequestForm from './TravelRequestForm';
@@ -10,28 +9,36 @@ import { money, formatDate } from '../../utils/format';
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'pending_level1', label: 'Pending L1' },
-  { key: 'pending_level2', label: 'Pending L2' },
-  { key: 'budget_hold', label: 'Budget Hold' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'booked', label: 'Booked' },
-  { key: 'expense_review', label: 'Expense Review' },
+  { key: 'pending_hod', label: 'Pending HOD' },
+  { key: 'pending_quality', label: 'Quality Review' },
+  { key: 'pending_booking', label: 'Ready to Book' },
+  { key: 'finance_hold', label: 'Finance Hold' },
+  { key: 'pending_finance_review', label: 'Finance Review' },
+  { key: 'pending_ceo', label: 'CEO Approval' },
+  { key: 'pending_board', label: 'Board Sign-off' },
+  { key: 'cleared_for_travel', label: 'Cleared for Travel' },
+  { key: 'expense_review', label: 'Receipt Check' },
+  { key: 'reimbursement_hold', label: 'Needs Corrections' },
+  { key: 'pending_payment', label: 'Pending Payment' },
   { key: 'completed', label: 'Completed' },
   { key: 'rejected', label: 'Rejected' },
 ];
 
 export default function TravelModule() {
-  const { travelRequests, currentUser, role, can } = useApp();
+  const { travelRequests, currentUser, can, scope } = useApp();
   const [statusFilter, setStatusFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState(null);
 
-  const scoped = useMemo(() => travelRequests.filter((tr) => {
-    if (role === ROLES.STAFF) return tr.requesterId === currentUser.id;
-    if (role === ROLES.PROGRAM_MANAGER) return tr.department === currentUser.department;
-    return true;
-  }), [travelRequests, role, currentUser]);
+  const scoped = useMemo(() => {
+    const travelScope = scope('travel');
+    return travelRequests.filter((tr) => {
+      if (travelScope === 'own') return tr.requesterId === currentUser.id;
+      if (travelScope === 'department') return tr.department === currentUser.department;
+      return true;
+    });
+  }, [travelRequests, scope, currentUser]);
 
   const filtered = scoped.filter((tr) => {
     if (statusFilter !== 'all' && tr.status !== statusFilter) return false;
@@ -46,7 +53,7 @@ export default function TravelModule() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Travel Management</h1>
-          <p className="page-subtitle">Request submission, two-tier approval, booking, expenses & reimbursement</p>
+          <p className="page-subtitle">Six-stage approval chain — HOD → Travel Office → Bookkeeper → Finance Manager → CEO → Board Treasurer, then expenses & reimbursement</p>
         </div>
         {can('travel', 'create') && (
           <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={15} /> New Travel Request</button>

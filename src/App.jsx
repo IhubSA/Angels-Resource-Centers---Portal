@@ -8,6 +8,7 @@ import FinanceModule from './components/finance/FinanceModule';
 import DocumentsModule from './components/documents/DocumentsModule';
 import AuditLogViewer from './components/audit/AuditLogViewer';
 import UserManagement from './components/admin/UserManagement';
+import PermissionsManager from './components/admin/PermissionsManager';
 import { useApp } from './context/AppContext';
 import { ShieldAlert, Heart, AlertCircle } from 'lucide-react';
 
@@ -36,6 +37,9 @@ export default function App() {
       case 'users':
         if (!can('admin', 'manageUsers')) return <AccessDenied />;
         return <UserManagement />;
+      case 'permissions':
+        if (!can('admin', 'managePermissions')) return <AccessDenied />;
+        return <PermissionsManager />;
       default:
         return <Dashboard setView={setView} />;
     }
@@ -67,7 +71,7 @@ function LoadingScreen() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'var(--bg)' }}>
       <div className="sidebar-brand-mark" style={{ animation: 'pulse 1.4s ease-in-out infinite' }}><Heart size={17} /></div>
-      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 600 }}>Loading Angels Recourse Centres data…</div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 600 }}>Loading Angels Resource Centre data…</div>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
     </div>
   );

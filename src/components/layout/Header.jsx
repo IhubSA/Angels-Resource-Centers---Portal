@@ -11,6 +11,7 @@ const VIEW_TITLES = {
   documents: 'Document Control',
   audit: 'Audit Log',
   users: 'User Management',
+  permissions: 'Permissions',
 };
 
 const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };

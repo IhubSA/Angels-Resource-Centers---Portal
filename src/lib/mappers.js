@@ -41,6 +41,10 @@ export function mapExpense(row) {
     receiptName: row.receipt_name,
     submittedDate: row.submitted_date,
     status: row.status,
+    client: row.client || '',
+    town: row.town || '',
+    programme: row.programme || '',
+    activity: row.activity || '',
   };
 }
 
@@ -58,10 +62,16 @@ export function mapTravelRequest(row, expenseRows = []) {
     budgetId: row.budget_id,
     status: row.status,
     createdDate: row.created_date,
-    level1: row.level1 || {},
-    level2: row.level2 || {},
-    budgetCheck: row.budget_check || null,
-    booking: row.booking || { confirmed: false, bookingRef: null, bookedDate: null, actualCost: null },
+    // Six-stage approval chain (ATMS-FRM-001): HOD -> Travel Office (quality) -> Bookkeeper (booking)
+    // -> Finance Manager (budget/policy) -> CEO -> Board Treasurer (conditional, high-value only).
+    hod: row.hod || { approverId: null, approverName: '', status: 'pending', date: null, comment: '' },
+    travelOffice: row.travel_office || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    booking: row.booking || { confirmed: false, bookedBy: null, bookedByName: '', bookingRef: null, bookedDate: null, actualCost: null },
+    financeReview: row.finance_review || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    ceo: row.ceo || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    boardTreasurer: row.board_treasurer || { required: false, approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    // Post-travel: Travel Office receipt check -> Finance Manager records expense & pays.
+    receiptCheck: row.receipt_check || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
     reimbursement: row.reimbursement || { status: 'not_applicable', amount: 0, processedDate: null, processedBy: null },
     expenses: expenseRows.filter((e) => e.travel_request_id === row.id).map(mapExpense),
   };
@@ -121,6 +131,10 @@ export function formatTimestamp(ts) {
   const d = ts ? new Date(ts) : new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function mapRolePermission(row) {
+  return { role: row.role, permissions: row.permissions || {} };
 }
 
 export function mapAuditLog(row) {

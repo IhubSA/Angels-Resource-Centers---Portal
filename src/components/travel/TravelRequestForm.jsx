@@ -29,7 +29,7 @@ export default function TravelRequestForm({ open, onClose }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New Travel Request" subtitle="Submit a request for approval" footer={
+    <Modal open={open} onClose={onClose} title="New Travel Request" subtitle="Links only — not a full itinerary build" footer={
       <>
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" form="travel-request-form" type="submit">Submit Request</button>
@@ -67,7 +67,7 @@ export default function TravelRequestForm({ open, onClose }) {
             </select>
           </div>
         </div>
-        <p className="hint">Your request will route through a two-tier approval workflow. Available funds are automatically verified before Finance sign-off.</p>
+        <p className="hint">Your request will route through the six-stage approval chain: HOD → Travel Office → Bookkeeper/Finance → Finance Manager → CEO → Board Treasurer (for trips above R{'50,000'}).</p>
       </form>
     </Modal>
   );

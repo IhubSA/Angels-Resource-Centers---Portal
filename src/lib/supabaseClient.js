@@ -24,4 +24,5 @@ export const TABLES = {
   documents: 'npo_portal_documents',
   documentVersions: 'npo_portal_document_versions',
   auditLog: 'npo_portal_audit_log',
+  rolePermissions: 'npo_portal_role_permissions',
 };
