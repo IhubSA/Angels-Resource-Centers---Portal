@@ -77,20 +77,34 @@ export function mapTravelRequest(row, expenseRows = []) {
   };
 }
 
-export function mapInvoice(row) {
+// Finance Hub requests (FIN-01/02/03): a shared five-stage flow — Line Manager ->
+// Bookkeeper -> Accountant -> CEO -> payment — used by all eight request types. APR
+// (Asset Purchase Request) additionally routes through an Entrepreneur Development
+// Advisor and a Mentor before Line Manager review (see src/data/permissions.js header).
+export function mapFinanceRequest(row) {
   return {
     id: row.id,
+    requestType: row.request_type,
     vendor: row.vendor,
     description: row.description,
     category: row.category,
     amount: num(row.amount),
     budgetId: row.budget_id,
     linkedTravelRequestId: row.linked_travel_request_id,
+    procurementRef: row.procurement_ref || '',
+    beneficiaryDevelopmentPlan: row.beneficiary_development_plan || '',
     submittedBy: row.submitted_by,
+    submittedById: row.submitted_by_id,
     submittedDate: row.submitted_date,
     status: row.status,
-    level1: row.level1 || {},
-    level2: row.level2 || {},
+    eda: row.eda || { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' },
+    mentor: row.mentor || { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' },
+    lineManager: row.line_manager || { approverId: null, approverName: '', status: 'pending', date: null, comment: '' },
+    bookkeeperVerification: row.bookkeeper_verification || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    accountantReview: row.accountant_review || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    ceo: row.ceo || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    payment: row.payment || { status: 'not_started', reference: null, processedBy: null, processedDate: null },
+    returnCount: row.return_count || 0,
   };
 }
 

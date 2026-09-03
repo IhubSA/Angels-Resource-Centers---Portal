@@ -1,4 +1,4 @@
-import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel } from 'lucide-react';
+import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel, UserCheck, Calculator, HeartHandshake, GraduationCap } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, BOARD_TREASURER_THRESHOLD } from '../../data/permissions';
 import StatusBadge from '../common/StatusBadge';
@@ -7,7 +7,7 @@ import { money, formatDate, pct } from '../../utils/format';
 const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };
 
 export default function Dashboard({ setView }) {
-  const { currentUser, role, travelRequests, invoices, documents, budgets, auditLog, pendingActions, users, scope } = useApp();
+  const { currentUser, role, travelRequests, financeRequests, documents, budgets, auditLog, pendingActions, users, scope } = useApp();
 
   const travelScope = scope('travel');
   const scopedTravel = travelRequests.filter((tr) => {
@@ -34,11 +34,11 @@ export default function Dashboard({ setView }) {
       ];
     }
     if (role === ROLES.FINANCE_MANAGER) {
-      const pendingInvoices = invoices.filter((i) => i.status === 'pending_level1' || i.status === 'pending_level2').length;
+      const pendingRequests = financeRequests.filter((fr) => String(fr.status).startsWith('pending')).length;
       return [
-        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Travel, invoices & documents', icon: AlertCircle, tone: 'amber' },
+        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Travel, requests & documents', icon: AlertCircle, tone: 'amber' },
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
-        { label: 'Invoices In Flight', value: pendingInvoices, sub: `${invoices.length} total invoices`, icon: Wallet, tone: 'blue' },
+        { label: 'Requests In Flight', value: pendingRequests, sub: `${financeRequests.length} total requests`, icon: Wallet, tone: 'blue' },
         { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
       ];
     }
@@ -51,6 +51,17 @@ export default function Dashboard({ setView }) {
         { label: 'Team Requests Active', value: teamActive, sub: `${scopedTravel.length} total this year`, icon: Plane, tone: 'blue' },
         { label: 'Team Budget Available', value: money(teamAvail), sub: `${teamBudget.length} budget line(s)`, icon: Wallet, tone: 'green' },
         { label: 'Documents Pending Review', value: docsPendingReview, sub: 'Programs & related', icon: FileStack, tone: 'slate' },
+      ];
+    }
+    if (role === ROLES.LINE_MANAGER) {
+      const reviewsDue = financeRequests.filter((fr) => fr.status === 'pending_line_manager').length;
+      const teamBudget = budgets.filter((b) => b.department === currentUser.department);
+      const teamAvail = teamBudget.reduce((s, b) => s + (b.allocated - b.committed - b.spent), 0);
+      return [
+        { label: 'Line Manager Reviews Due', value: reviewsDue, sub: 'Finance Hub requests', icon: UserCheck, tone: 'amber' },
+        { label: 'Team Budget Available', value: money(teamAvail), sub: `${teamBudget.length} budget line(s)`, icon: Wallet, tone: 'green' },
+        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Across all modules', icon: AlertCircle, tone: 'amber' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
       ];
     }
     if (role === ROLES.TRAVEL_OFFICE) {
@@ -75,15 +86,45 @@ export default function Dashboard({ setView }) {
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
       ];
     }
+    if (role === ROLES.ACCOUNTANT) {
+      const reviewsDue = financeRequests.filter((fr) => fr.status === 'pending_accountant_review').length;
+      const approvedThisYear = financeRequests.filter((fr) => fr.accountantReview.status === 'approved').length;
+      return [
+        { label: 'Accountant Reviews Due', value: reviewsDue, sub: 'Finance Hub requests', icon: Calculator, tone: 'amber' },
+        { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
+        { label: 'Requests Reviewed', value: approvedThisYear, sub: `${financeRequests.length} total requests`, icon: CheckCircle2, tone: 'blue' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
+      ];
+    }
+    if (role === ROLES.ENTREPRENEUR_DEV_ADVISOR) {
+      const reviewsDue = financeRequests.filter((fr) => fr.status === 'pending_eda').length;
+      const aprTotal = financeRequests.filter((fr) => fr.requestType === 'apr').length;
+      return [
+        { label: 'EDA Reviews Due', value: reviewsDue, sub: 'Asset Purchase Requests (APR)', icon: HeartHandshake, tone: 'amber' },
+        { label: 'APR Requests Tracked', value: aprTotal, sub: 'Beneficiary development plan alignment', icon: Wallet, tone: 'blue' },
+        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Across all modules', icon: AlertCircle, tone: 'amber' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
+      ];
+    }
+    if (role === ROLES.MENTOR) {
+      const approvalsDue = financeRequests.filter((fr) => fr.status === 'pending_mentor').length;
+      const aprTotal = financeRequests.filter((fr) => fr.requestType === 'apr').length;
+      return [
+        { label: 'Mentor Approvals Due', value: approvalsDue, sub: 'Asset Purchase Requests (APR)', icon: GraduationCap, tone: 'amber' },
+        { label: 'APR Requests Tracked', value: aprTotal, sub: 'Mentorship endorsement', icon: Wallet, tone: 'blue' },
+        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Across all modules', icon: AlertCircle, tone: 'amber' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
+      ];
+    }
     if (role === ROLES.CEO) {
       const approvalsDue = travelRequests.filter((tr) => tr.status === 'pending_ceo').length;
       const highValue = travelRequests.filter((tr) => tr.boardTreasurer.required).length;
-      const pendingInvoices = invoices.filter((i) => i.status === 'pending_level1' || i.status === 'pending_level2').length;
+      const pendingRequests = financeRequests.filter((fr) => String(fr.status).startsWith('pending')).length;
       return [
         { label: 'Trip Approvals Due', value: approvalsDue, sub: 'Awaiting CEO sign-off', icon: Crown, tone: 'amber' },
         { label: 'High-Value Trips', value: highValue, sub: `Above R${BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold`, icon: Gavel, tone: 'slate' },
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
-        { label: 'Invoices In Flight', value: pendingInvoices, sub: `${invoices.length} total invoices`, icon: Wallet, tone: 'blue' },
+        { label: 'Requests In Flight', value: pendingRequests, sub: `${financeRequests.length} total requests`, icon: Wallet, tone: 'blue' },
       ];
     }
     if (role === ROLES.BOARD_TREASURER) {
@@ -109,7 +150,7 @@ export default function Dashboard({ setView }) {
       ];
     }
     // auditor
-    const approvedThisMonth = travelRequests.filter((tr) => ['approved', 'booked', 'completed'].includes(tr.status)).length + invoices.filter((i) => i.status === 'paid').length;
+    const approvedThisMonth = travelRequests.filter((tr) => ['approved', 'booked', 'completed'].includes(tr.status)).length + financeRequests.filter((fr) => fr.status === 'completed').length;
     const compliancePct = pct(documents.filter((d) => d.complianceChecked).length, documents.length);
     return [
       { label: 'Approved Transactions', value: approvedThisMonth, sub: 'Travel & finance', icon: CheckCircle2, tone: 'green' },
@@ -195,7 +236,7 @@ export default function Dashboard({ setView }) {
         </div>
       </div>
 
-      {[ROLES.ADMIN, ROLES.FINANCE_MANAGER, ROLES.AUDITOR, ROLES.CEO, ROLES.BOARD_TREASURER, ROLES.BOOKKEEPER_FINANCE].includes(role) && (
+      {[ROLES.ADMIN, ROLES.FINANCE_MANAGER, ROLES.AUDITOR, ROLES.CEO, ROLES.BOARD_TREASURER, ROLES.BOOKKEEPER_FINANCE, ROLES.ACCOUNTANT].includes(role) && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-header">
             <div>

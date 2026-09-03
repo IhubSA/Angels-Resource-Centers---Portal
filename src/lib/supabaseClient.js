@@ -20,7 +20,7 @@ export const TABLES = {
   budgets: 'npo_portal_budgets',
   travelRequests: 'npo_portal_travel_requests',
   travelExpenses: 'npo_portal_travel_expenses',
-  invoices: 'npo_portal_invoices',
+  financeRequests: 'npo_portal_invoices', // table name kept for continuity; now holds all Finance Hub request types
   documents: 'npo_portal_documents',
   documentVersions: 'npo_portal_document_versions',
   auditLog: 'npo_portal_audit_log',

@@ -9,8 +9,11 @@ import { money, pct } from '../../utils/format';
 const CATEGORIES = ['Travel', 'Operations', 'Programs', 'Training'];
 
 export default function BudgetsPanel() {
-  const { budgets, createBudget, adjustBudgetAllocation, can, currentUser, role } = useApp();
-  const scoped = role === 'program_manager' ? budgets.filter((b) => b.department === currentUser.department) : budgets;
+  const { budgets, createBudget, adjustBudgetAllocation, can, currentUser, scope } = useApp();
+  const financeScope = scope('finance');
+  const scoped = financeScope === 'own' || financeScope === 'department'
+    ? budgets.filter((b) => b.department === currentUser.department)
+    : budgets;
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', category: 'Programs', department: '', owner: currentUser.name, allocated: '' });

@@ -16,7 +16,7 @@ function download(filename, content, type = 'text/csv') {
 }
 
 export default function ReportsPanel() {
-  const { budgets, travelRequests, invoices, showToast } = useApp();
+  const { budgets, travelRequests, financeRequests, showToast } = useApp();
 
   function exportBudgetReport() {
     const rows = budgets.map((b) => ({ id: b.id, name: b.name, category: b.category, department: b.department, allocated: b.allocated, committed: b.committed, spent: b.spent, available: b.allocated - b.committed - b.spent }));
@@ -29,10 +29,10 @@ export default function ReportsPanel() {
     download('travel_expenses.csv', toCsv(rows, ['travelId', 'requester', 'category', 'description', 'amount', 'status', 'submitted']));
     showToast('Expense report exported');
   }
-  function exportInvoiceReport() {
-    const rows = invoices.map((i) => ({ id: i.id, vendor: i.vendor, category: i.category, amount: i.amount, status: i.status, submittedBy: i.submittedBy, submitted: i.submittedDate }));
-    download('invoices.csv', toCsv(rows, ['id', 'vendor', 'category', 'amount', 'status', 'submittedBy', 'submitted']));
-    showToast('Invoice report exported');
+  function exportRequestReport() {
+    const rows = financeRequests.map((fr) => ({ id: fr.id, requestType: fr.requestType, vendor: fr.vendor, category: fr.category, amount: fr.amount, status: fr.status, submittedBy: fr.submittedBy, submitted: fr.submittedDate }));
+    download('finance_hub_requests.csv', toCsv(rows, ['id', 'requestType', 'vendor', 'category', 'amount', 'status', 'submittedBy', 'submitted']));
+    showToast('Finance Hub request report exported');
   }
   function exportReimbursementReport() {
     const rows = travelRequests.filter((tr) => tr.reimbursement.status !== 'not_applicable').map((tr) => ({ travelId: tr.id, requester: tr.requesterName, destination: tr.destination, amount: tr.reimbursement.amount, status: tr.reimbursement.status, processedDate: tr.reimbursement.processedDate }));
@@ -46,7 +46,7 @@ export default function ReportsPanel() {
   const reports = [
     { icon: Wallet, title: 'Budget vs. Actual Report', desc: `${budgets.length} budget lines · ${money(totalAllocated)} allocated, ${money(totalSpent)} spent`, action: exportBudgetReport },
     { icon: Receipt, title: 'Travel Expense Report', desc: 'All submitted expenses with receipt reference & status', action: exportExpenseReport },
-    { icon: FileStackIcon, title: 'Invoice & Payment Report', desc: `${invoices.length} invoices across all approval stages`, action: exportInvoiceReport },
+    { icon: FileStackIcon, title: 'Finance Hub Request & Payment Report', desc: `${financeRequests.length} requests across all approval stages`, action: exportRequestReport },
     { icon: PieChart, title: 'Reimbursement Report', desc: 'Processed & pending staff reimbursements', action: exportReimbursementReport },
   ];
 
