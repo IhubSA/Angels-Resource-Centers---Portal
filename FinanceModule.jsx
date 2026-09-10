@@ -2,18 +2,21 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { money, pct } from '../../utils/format';
 import BudgetsPanel from './BudgetsPanel';
-import InvoicesPanel from './InvoicesPanel';
+import RequestsPanel from './RequestsPanel';
 import ExpensesPanel from './ExpensesPanel';
 import ReportsPanel from './ReportsPanel';
 
 function OverviewTab() {
-  const { budgets, invoices, travelRequests, role, currentUser } = useApp();
-  const scoped = role === 'program_manager' ? budgets.filter((b) => b.department === currentUser.department) : budgets;
+  const { budgets, financeRequests, scope, currentUser } = useApp();
+  const financeScope = scope('finance');
+  const scoped = financeScope === 'own' || financeScope === 'department'
+    ? budgets.filter((b) => b.department === currentUser.department)
+    : budgets;
   const totalAllocated = scoped.reduce((s, b) => s + b.allocated, 0);
   const totalCommitted = scoped.reduce((s, b) => s + b.committed, 0);
   const totalSpent = scoped.reduce((s, b) => s + b.spent, 0);
   const available = totalAllocated - totalCommitted - totalSpent;
-  const pendingInvoiceValue = invoices.filter((i) => i.status.startsWith('pending')).reduce((s, i) => s + i.amount, 0);
+  const pendingRequestValue = financeRequests.filter((fr) => fr.status.startsWith('pending')).reduce((s, fr) => s + fr.amount, 0);
 
   return (
     <div>
@@ -21,11 +24,11 @@ function OverviewTab() {
         <div className="stat-tile"><div className="stat-label">Total Allocated</div><div className="stat-value">{money(totalAllocated)}</div><div className="stat-sub">FY2026 · {scoped.length} budget lines</div></div>
         <div className="stat-tile"><div className="stat-label">Committed</div><div className="stat-value">{money(totalCommitted)}</div><div className="stat-sub">Approved, not yet paid</div></div>
         <div className="stat-tile"><div className="stat-label">Spent</div><div className="stat-value">{money(totalSpent)}</div><div className="stat-sub">{pct(totalSpent, totalAllocated)}% of allocation</div></div>
-        <div className="stat-tile"><div className="stat-label">Available</div><div className="stat-value" style={{ color: available < 0 ? 'var(--red)' : 'inherit' }}>{money(available)}</div><div className="stat-sub">{money(pendingInvoiceValue)} in pending invoices</div></div>
+        <div className="stat-tile"><div className="stat-label">Available</div><div className="stat-value" style={{ color: available < 0 ? 'var(--red)' : 'inherit' }}>{money(available)}</div><div className="stat-sub">{money(pendingRequestValue)} in pending requests</div></div>
       </div>
 
       <div className="card">
-        <div className="card-header"><div><h3>Real-Time Budget vs. Actual</h3><p>Updates instantly as requests, invoices and reimbursements move through approval</p></div></div>
+        <div className="card-header"><div><h3>Real-Time Budget vs. Actual</h3><p>Updates instantly as requests and reimbursements move through approval</p></div></div>
         <div className="card-pad">
           {scoped.map((b) => {
             const spentPct = pct(b.spent, b.allocated);
@@ -90,7 +93,7 @@ export default function FinanceModule() {
   const tabs = [
     { key: 'overview', label: 'Overview', show: true },
     { key: 'budgets', label: 'Budgets', show: !isOwnScope },
-    { key: 'invoices', label: 'Invoices', show: !isOwnScope },
+    { key: 'requests', label: 'Requests', show: true },
     { key: 'expenses', label: 'Travel Expenses', show: true },
     { key: 'reports', label: 'Reports & Export', show: can('finance', 'export') },
     { key: 'audit', label: 'Audit Trail', show: can('audit', 'view') },
@@ -101,7 +104,7 @@ export default function FinanceModule() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Finance Management</h1>
-          <p className="page-subtitle">Budgets, invoices, expense tracking and financial reporting</p>
+          <p className="page-subtitle">Budgets, Finance Hub requests, expense tracking and financial reporting</p>
         </div>
       </div>
       <div className="tabs">
@@ -109,7 +112,7 @@ export default function FinanceModule() {
       </div>
       {tab === 'overview' && <OverviewTab />}
       {tab === 'budgets' && !isOwnScope && <BudgetsPanel />}
-      {tab === 'invoices' && !isOwnScope && <InvoicesPanel />}
+      {tab === 'requests' && <RequestsPanel />}
       {tab === 'expenses' && <ExpensesPanel />}
       {tab === 'reports' && <ReportsPanel />}
       {tab === 'audit' && <AuditTrailTab />}

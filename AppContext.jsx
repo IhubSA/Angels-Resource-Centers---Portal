@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ROLES, canWith, viewScopeWith, DEFAULT_PERMISSIONS, BOARD_TREASURER_THRESHOLD } from '../data/permissions';
 import { supabase, TABLES } from '../lib/supabaseClient';
-import { mapUser, mapBudget, mapTravelRequest, mapInvoice, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
+import { mapUser, mapProject, mapBudget, mapTravelRequest, mapFinanceRequest, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
 
 const AppContext = createContext(null);
 
@@ -19,16 +19,18 @@ const nowStamp = () => {
 
 const FALLBACK_USER = { id: null, name: '', email: '', role: ROLES.STAFF, department: '', title: '', active: true, initials: '' };
 const DEMO_ROLE_ORDER = [
-  ROLES.ADMIN, ROLES.STAFF, ROLES.OPERATIONAL_HOD, ROLES.TRAVEL_OFFICE,
-  ROLES.BOOKKEEPER_FINANCE, ROLES.FINANCE_MANAGER, ROLES.CEO, ROLES.BOARD_TREASURER, ROLES.AUDITOR,
+  ROLES.ADMIN, ROLES.STAFF, ROLES.OPERATIONAL_HOD, ROLES.LINE_MANAGER, ROLES.TRAVEL_OFFICE,
+  ROLES.BOOKKEEPER_FINANCE, ROLES.ACCOUNTANT, ROLES.FINANCE_MANAGER, ROLES.CEO, ROLES.BOARD_TREASURER,
+  ROLES.ENTREPRENEUR_DEV_ADVISOR, ROLES.MENTOR, ROLES.AUDITOR,
 ];
 
 export function AppProvider({ children }) {
   const [currentUserId, setCurrentUserId] = useState('u1');
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [travelRequests, setTravelRequests] = useState([]);
-  const [invoices, setInvoices] = useState([]);
+  const [financeRequests, setFinanceRequests] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [rolePermissions, setRolePermissions] = useState({});
@@ -55,25 +57,27 @@ export function AppProvider({ children }) {
       setLoading(true);
       setLoadError(null);
       try {
-        const [usersRes, budgetsRes, travelRes, expensesRes, invoicesRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
+        const [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
           supabase.from(TABLES.users).select('*').order('id'),
+          supabase.from(TABLES.projects).select('*').order('name'),
           supabase.from(TABLES.budgets).select('*').order('id'),
           supabase.from(TABLES.travelRequests).select('*').order('created_date', { ascending: false }),
           supabase.from(TABLES.travelExpenses).select('*'),
-          supabase.from(TABLES.invoices).select('*').order('submitted_date', { ascending: false }),
+          supabase.from(TABLES.financeRequests).select('*').order('submitted_date', { ascending: false }),
           supabase.from(TABLES.documents).select('*').order('upload_date', { ascending: false }),
           supabase.from(TABLES.documentVersions).select('*'),
           supabase.from(TABLES.auditLog).select('*').order('ts', { ascending: false }),
           supabase.from(TABLES.rolePermissions).select('*'),
         ]);
-        const firstError = [usersRes, budgetsRes, travelRes, expensesRes, invoicesRes, docsRes, versionsRes, auditRes, permsRes]
+        const firstError = [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes]
           .map((r) => r.error).find(Boolean);
         if (firstError) throw firstError;
         if (cancelled) return;
         setUsers(usersRes.data.map(mapUser));
+        setProjects(projectsRes.data.map(mapProject));
         setBudgets(budgetsRes.data.map(mapBudget));
         setTravelRequests(travelRes.data.map((r) => mapTravelRequest(r, expensesRes.data)));
-        setInvoices(invoicesRes.data.map(mapInvoice));
+        setFinanceRequests(financeRes.data.map(mapFinanceRequest));
         setDocuments(docsRes.data.map((d) => mapDocument(d, versionsRes.data)));
         setAuditLog(auditRes.data.map(mapAuditLog));
         setRolePermissions(Object.fromEntries(permsRes.data.map(mapRolePermission).map((r) => [r.role, r.permissions])));
@@ -146,13 +150,43 @@ export function AppProvider({ children }) {
 
   const budgetAvailable = useCallback((b) => b.allocated - b.committed - b.spent, []);
 
+  // ---------- Admin: Projects ----------
+  // A standalone list, independent of Budget Lines — the traveler picks a Project (which
+  // programme/initiative the trip supports) AND separately a Budget Line (which pot of money
+  // pays for it), per Brent's choice on 2026-09-10.
+  const addProject = useCallback((data) => {
+    const p = { id: nextId('PRJ'), active: true, createdDate: today(), ...data };
+    setProjects((prev) => [...prev, p]);
+    log('Created project', 'Admin', p.id, p.name);
+    showToast('Project created');
+    persistInsert(TABLES.projects, {
+      id: p.id, name: p.name, code: p.code || '', department: p.department || '', active: p.active, created_date: p.createdDate,
+    }, 'project');
+  }, [log, showToast, persistInsert]);
+
+  const toggleProjectActive = useCallback((id) => {
+    const p = projects.find((x) => x.id === id);
+    const newActive = !p?.active;
+    setProjects((prev) => prev.map((x) => (x.id === id ? { ...x, active: newActive } : x)));
+    log(p?.active ? 'Deactivated project' : 'Activated project', 'Admin', id, p?.name || id);
+    showToast(p?.active ? 'Project deactivated' : 'Project activated');
+    persistUpdate(TABLES.projects, id, { active: newActive }, 'project status');
+  }, [projects, log, showToast, persistUpdate]);
+
   // ---------- Travel Management ----------
   // Six-stage approval chain per ATMS-FRM-001: HOD -> Travel Office (quality) -> Bookkeeper (booking)
   // -> Finance Manager (budget/policy, after booking) -> CEO -> Board Treasurer (conditional, > R50,000).
   // Then post-travel: Travel Office (receipt check) -> Finance Manager (record & pay).
+  // Rebuilt 2026-09-10: one trip = one approval chain, even when it covers several itinerary
+  // legs (Air/Road/Air & Road/Accommodation) and/or several travelers booked on their behalf
+  // by the requester. `data.itinerary` is the full array of legs already assembled client-side
+  // by TravelRequestForm; `destination`/`startDate`/`endDate` here are derived from the first
+  // leg purely so the rest of the app (search, dashboard, reports) keeps working unchanged.
   const submitTravelRequest = useCallback((data) => {
     const hodUser = users.find((u) => u.role === ROLES.OPERATIONAL_HOD && u.department === currentUser.department)
       || users.find((u) => u.role === ROLES.OPERATIONAL_HOD);
+    const firstLeg = data.itinerary?.[0] || {};
+    const lastLeg = data.itinerary?.[data.itinerary.length - 1] || firstLeg;
     const tr = {
       id: nextId('TR'),
       requesterId: currentUser.id,
@@ -160,6 +194,12 @@ export function AppProvider({ children }) {
       department: currentUser.department,
       createdDate: today(),
       status: 'pending_hod',
+      destination: data.itinerary && data.itinerary.length > 1
+        ? `${firstLeg.destination} +${data.itinerary.length - 1} more`
+        : (firstLeg.destination || ''),
+      startDate: firstLeg.departDateTime || '',
+      endDate: (lastLeg.roundTrip && lastLeg.returnDateTime) ? lastLeg.returnDateTime : (lastLeg.departDateTime || firstLeg.departDateTime || ''),
+      purpose: data.businessActivity || '',
       hod: { approverId: null, approverName: hodUser?.name || 'Operational/HOD', status: 'pending', date: null, comment: '' },
       travelOffice: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
       booking: { confirmed: false, bookedBy: null, bookedByName: '', bookingRef: null, bookedDate: null, actualCost: null },
@@ -169,18 +209,29 @@ export function AppProvider({ children }) {
       receiptCheck: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
       expenses: [],
       reimbursement: { status: 'not_applicable', amount: 0, processedDate: null, processedBy: null },
+      travelers: [],
+      noOfTravelers: 1,
+      projectId: '',
+      businessActivity: '',
+      travelJustification: '',
+      sntAdvanceRequired: false,
+      multiItinerary: false,
+      itinerary: [],
       ...data,
     };
 
     setTravelRequests((prev) => [tr, ...prev]);
-    log('Submitted travel request', 'Travel', tr.id, `${data.destination} — links only, estimated R${data.estimatedCost.toLocaleString()}`);
-    notify({ role: ROLES.OPERATIONAL_HOD, title: 'Travel request awaiting HOD review', message: `${tr.requesterName} — ${data.destination}`, module: 'Travel', targetId: tr.id });
+    log('Submitted travel request', 'Travel', tr.id, `${tr.destination} — ${tr.itinerary.length} leg${tr.itinerary.length === 1 ? '' : 's'}, estimated R${data.estimatedCost.toLocaleString()}`);
+    notify({ role: ROLES.OPERATIONAL_HOD, title: 'Travel request awaiting HOD review', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: tr.id });
     showToast('Travel request submitted');
 
     persistInsert(TABLES.travelRequests, {
       id: tr.id, requester_id: tr.requesterId, requester_name: tr.requesterName, department: tr.department,
-      destination: tr.destination, purpose: tr.purpose, start_date: tr.startDate, end_date: tr.endDate,
+      destination: tr.destination, purpose: tr.purpose, start_date: tr.startDate || null, end_date: tr.endDate || null,
       estimated_cost: tr.estimatedCost, budget_id: tr.budgetId, status: tr.status, created_date: tr.createdDate,
+      travelers: tr.travelers, no_of_travelers: tr.noOfTravelers, project_id: tr.projectId || null,
+      business_activity: tr.businessActivity, travel_justification: tr.travelJustification,
+      sant_advance_required: tr.sntAdvanceRequired, multi_itinerary: tr.multiItinerary, itinerary: tr.itinerary,
       hod: tr.hod, travel_office: tr.travelOffice, booking: tr.booking, finance_review: tr.financeReview,
       ceo: tr.ceo, board_treasurer: tr.boardTreasurer, receipt_check: tr.receiptCheck, reimbursement: tr.reimbursement,
     }, 'travel request');
@@ -407,78 +458,252 @@ export function AppProvider({ children }) {
     }));
   }, [currentUser, log, notify, showToast, persistUpdate, persistError]);
 
-  // ---------- Finance: Invoices ----------
-  const submitInvoice = useCallback((data) => {
-    const inv = {
-      id: nextId('INV'),
+  // ---------- Finance Hub: Requests (FIN-01/02/03) ----------
+  // Shared five-stage chain — Line Manager -> Bookkeeper -> Accountant -> CEO -> payment
+  // — used by all eight request types (Payment/APR/OPR/IPR/BPR/DPR/DST/OST). APR
+  // additionally routes through an Entrepreneur Development Advisor and a Mentor before
+  // Line Manager review (added at Brent's direction; not in the source diagram — see
+  // permissions.js header). Every return path leads back to the requester, who edits and
+  // resubmits, restarting at the first stage of whichever chain applies.
+  const submitFinanceRequest = useCallback((data) => {
+    const isApr = data.requestType === 'apr';
+    const status = isApr ? 'pending_eda' : 'pending_line_manager';
+    const fr = {
+      id: nextId('FR'),
       submittedBy: currentUser.name,
+      submittedById: currentUser.id,
       submittedDate: today(),
-      status: 'pending_level1',
-      level1: { approverName: 'Sarah Naidoo', status: 'pending', date: null, comment: '' },
-      level2: { approverName: 'Thandiwe Mokoena', status: 'not_started', date: null, comment: '' },
+      status,
+      eda: { approverId: null, approverName: '', status: isApr ? 'pending' : 'not_applicable', date: null, comment: '' },
+      mentor: { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' },
+      lineManager: { approverId: null, approverName: '', status: isApr ? 'not_started' : 'pending', date: null, comment: '' },
+      bookkeeperVerification: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+      accountantReview: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+      ceo: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+      payment: { status: 'not_started', reference: null, processedBy: null, processedDate: null },
+      returnCount: 0,
       ...data,
     };
     const budget = budgets.find((b) => b.id === data.budgetId);
     const newCommitted = budget ? budget.committed + data.amount : data.amount;
     setBudgets((prev) => prev.map((b) => (b.id === data.budgetId ? { ...b, committed: newCommitted } : b)));
-    setInvoices((prev) => [inv, ...prev]);
-    log('Submitted invoice', 'Finance', inv.id, `${data.vendor} — R${data.amount.toLocaleString()}`);
-    notify({ role: ROLES.FINANCE_MANAGER, title: 'Invoice awaiting Level 1 approval', message: `${data.vendor} — R${data.amount.toLocaleString()}`, module: 'Finance', targetId: inv.id });
-    showToast('Invoice submitted');
-    persistInsert(TABLES.invoices, {
-      id: inv.id, vendor: inv.vendor, description: inv.description, category: inv.category, amount: inv.amount,
-      budget_id: inv.budgetId, linked_travel_request_id: inv.linkedTravelRequestId || null, submitted_by: inv.submittedBy,
-      submitted_date: inv.submittedDate, status: inv.status, level1: inv.level1, level2: inv.level2,
-    }, 'invoice');
+    setFinanceRequests((prev) => [fr, ...prev]);
+    log('Submitted Finance Hub request', 'Finance', fr.id, `${data.vendor || data.description} — R${data.amount.toLocaleString()}`);
+    notify({
+      role: isApr ? ROLES.ENTREPRENEUR_DEV_ADVISOR : ROLES.LINE_MANAGER,
+      title: isApr ? 'APR awaiting Entrepreneur Development Advisor review' : 'Request awaiting Line Manager review',
+      message: `${data.vendor || data.description} — R${data.amount.toLocaleString()}`, module: 'Finance', targetId: fr.id,
+    });
+    showToast('Request submitted');
+    persistInsert(TABLES.financeRequests, {
+      id: fr.id, request_type: fr.requestType, vendor: fr.vendor, description: fr.description, category: fr.category,
+      amount: fr.amount, budget_id: fr.budgetId, linked_travel_request_id: fr.linkedTravelRequestId || null,
+      procurement_ref: fr.procurementRef || '', beneficiary_development_plan: fr.beneficiaryDevelopmentPlan || '',
+      submitted_by: fr.submittedBy, submitted_by_id: fr.submittedById, submitted_date: fr.submittedDate, status: fr.status,
+      eda: fr.eda, mentor: fr.mentor, line_manager: fr.lineManager, bookkeeper_verification: fr.bookkeeperVerification,
+      accountant_review: fr.accountantReview, ceo: fr.ceo, payment: fr.payment, return_count: fr.returnCount,
+    }, 'finance request');
     persistUpdate(TABLES.budgets, data.budgetId, { committed: newCommitted }, 'budget commitment');
   }, [currentUser, budgets, log, notify, showToast, persistInsert, persistUpdate]);
 
-  const approveInvoiceLevel1 = useCallback((id, approve, comment) => {
-    setInvoices((prev) => prev.map((inv) => {
-      if (inv.id !== id) return inv;
-      const level1 = { ...inv.level1, status: approve ? 'approved' : 'rejected', date: today(), comment };
+  // Releases a request's committed budget — used whenever a pre-CEO stage rejects it.
+  const releaseCommitted = useCallback((fr) => {
+    const budget = budgets.find((b) => b.id === fr.budgetId);
+    const newCommitted = budget ? Math.max(0, budget.committed - fr.amount) : 0;
+    setBudgets((prevB) => prevB.map((b) => (b.id === fr.budgetId ? { ...b, committed: newCommitted } : b)));
+    persistUpdate(TABLES.budgets, fr.budgetId, { committed: newCommitted }, 'budget commitment');
+  }, [budgets, persistUpdate]);
+
+  // Stage 0a (APR only) — Entrepreneur Development Advisor review.
+  const edaReview = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const eda = { ...fr.eda, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
       if (!approve) {
-        const budget = budgets.find((b) => b.id === inv.budgetId);
-        const newCommitted = budget ? Math.max(0, budget.committed - inv.amount) : 0;
-        setBudgets((prevB) => prevB.map((b) => (b.id === inv.budgetId ? { ...b, committed: newCommitted } : b)));
-        log('Rejected invoice (Level 1)', 'Finance', id, comment || 'No comment provided');
-        showToast('Invoice rejected', 'warn');
-        persistUpdate(TABLES.invoices, id, { level1, status: 'rejected' }, 'invoice');
-        persistUpdate(TABLES.budgets, inv.budgetId, { committed: newCommitted }, 'budget commitment');
-        return { ...inv, level1, status: 'rejected' };
+        releaseCommitted(fr);
+        log('Entrepreneur Development Advisor returned APR', 'Finance', id, comment || 'Not aligned with beneficiary development plan');
+        notify({ userId: fr.submittedById, title: 'Request returned', message: `${fr.vendor || fr.description} — ${comment || 'Returned by Entrepreneur Development Advisor'}`, module: 'Finance', targetId: id });
+        showToast('Request returned to requester', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { eda, status: 'returned_by_eda' }, 'finance request');
+        return { ...fr, eda, status: 'returned_by_eda' };
       }
-      log('Approved invoice (Level 1)', 'Finance', id, comment || inv.vendor);
-      notify({ role: ROLES.ADMIN, title: 'Invoice awaiting Level 2 approval', message: `${inv.vendor} — R${inv.amount.toLocaleString()}`, module: 'Finance', targetId: id });
-      showToast('Approved — forwarded for Level 2 approval');
-      persistUpdate(TABLES.invoices, id, { level1, status: 'pending_level2' }, 'invoice');
-      return { ...inv, level1, status: 'pending_level2' };
+      const mentor = { ...fr.mentor, status: 'pending' };
+      log('Entrepreneur Development Advisor approved APR', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.MENTOR, title: 'APR awaiting Mentor approval', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Approved — forwarded to Mentor');
+      persistUpdate(TABLES.financeRequests, id, { eda, mentor, status: 'pending_mentor' }, 'finance request');
+      return { ...fr, eda, mentor, status: 'pending_mentor' };
+    }));
+  }, [currentUser, log, notify, showToast, persistUpdate, releaseCommitted]);
+
+  // Stage 0b (APR only) — Mentor approval.
+  const mentorApprove = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const mentor = { ...fr.mentor, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
+      if (!approve) {
+        releaseCommitted(fr);
+        log('Mentor returned APR', 'Finance', id, comment || 'Not endorsed');
+        notify({ userId: fr.submittedById, title: 'Request returned', message: `${fr.vendor || fr.description} — ${comment || 'Returned by Mentor'}`, module: 'Finance', targetId: id });
+        showToast('Request returned to requester', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { mentor, status: 'returned_by_mentor' }, 'finance request');
+        return { ...fr, mentor, status: 'returned_by_mentor' };
+      }
+      const lineManager = { ...fr.lineManager, status: 'pending' };
+      log('Mentor endorsed APR', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.LINE_MANAGER, title: 'Request awaiting Line Manager review', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Endorsed — forwarded to Line Manager');
+      persistUpdate(TABLES.financeRequests, id, { mentor, line_manager: lineManager, status: 'pending_line_manager' }, 'finance request');
+      return { ...fr, mentor, lineManager, status: 'pending_line_manager' };
+    }));
+  }, [currentUser, log, notify, showToast, persistUpdate, releaseCommitted]);
+
+  // Stage 1 — Line Manager: budget availability and business justification.
+  const lineManagerReview = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const lineManager = { ...fr.lineManager, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
+      if (!approve) {
+        releaseCommitted(fr);
+        log('Line Manager returned request', 'Finance', id, comment || 'Budget or justification not confirmed');
+        notify({ userId: fr.submittedById, title: 'Request returned', message: `${fr.vendor || fr.description} — ${comment || 'Returned by Line Manager'}`, module: 'Finance', targetId: id });
+        showToast('Request returned to requester', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { line_manager: lineManager, status: 'returned_by_line_manager' }, 'finance request');
+        return { ...fr, lineManager, status: 'returned_by_line_manager' };
+      }
+      const bookkeeperVerification = { ...fr.bookkeeperVerification, status: 'pending' };
+      log('Line Manager approved — budget & justification confirmed', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.BOOKKEEPER_FINANCE, title: 'Request awaiting Bookkeeper verification', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Approved — forwarded to Bookkeeper for verification');
+      persistUpdate(TABLES.financeRequests, id, { line_manager: lineManager, bookkeeper_verification: bookkeeperVerification, status: 'pending_bookkeeper_verification' }, 'finance request');
+      return { ...fr, lineManager, bookkeeperVerification, status: 'pending_bookkeeper_verification' };
+    }));
+  }, [currentUser, log, notify, showToast, persistUpdate, releaseCommitted]);
+
+  // Stage 2 — Bookkeeper: documentation completeness, coding, policy compliance.
+  const bookkeeperVerify = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const bookkeeperVerification = { ...fr.bookkeeperVerification, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
+      if (!approve) {
+        releaseCommitted(fr);
+        log('Bookkeeper returned request — corrections needed', 'Finance', id, comment || 'Failed verification');
+        notify({ userId: fr.submittedById, title: 'Request returned for corrections', message: `${fr.vendor || fr.description} — ${comment || 'Returned by Bookkeeper'}`, module: 'Finance', targetId: id });
+        showToast('Request returned for corrections', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { bookkeeper_verification: bookkeeperVerification, status: 'returned_by_bookkeeper' }, 'finance request');
+        return { ...fr, bookkeeperVerification, status: 'returned_by_bookkeeper' };
+      }
+      const accountantReview = { ...fr.accountantReview, status: 'pending' };
+      log('Bookkeeper passed verification', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.ACCOUNTANT, title: 'Request awaiting Accountant review', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Verified — forwarded to Accountant');
+      persistUpdate(TABLES.financeRequests, id, { bookkeeper_verification: bookkeeperVerification, accountant_review: accountantReview, status: 'pending_accountant_review' }, 'finance request');
+      return { ...fr, bookkeeperVerification, accountantReview, status: 'pending_accountant_review' };
+    }));
+  }, [currentUser, log, notify, showToast, persistUpdate, releaseCommitted]);
+
+  // Stage 3 — Accountant: financial accuracy, budget availability, GL coding. Approval is
+  // where the committed amount becomes a confirmed spend (mirrors Travel's Finance Manager stage).
+  const accountantReview = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const accountantReviewObj = { ...fr.accountantReview, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
+      if (!approve) {
+        releaseCommitted(fr);
+        log('Accountant returned request', 'Finance', id, comment || 'Financial accuracy or GL coding issue');
+        notify({ userId: fr.submittedById, title: 'Request returned', message: `${fr.vendor || fr.description} — ${comment || 'Returned by Accountant'}`, module: 'Finance', targetId: id });
+        showToast('Request returned to requester', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { accountant_review: accountantReviewObj, status: 'returned_by_accountant' }, 'finance request');
+        return { ...fr, accountantReview: accountantReviewObj, status: 'returned_by_accountant' };
+      }
+      const budget = budgets.find((b) => b.id === fr.budgetId);
+      const newCommitted = budget ? Math.max(0, budget.committed - fr.amount) : 0;
+      const newSpent = budget ? budget.spent + fr.amount : fr.amount;
+      setBudgets((prevB) => prevB.map((b) => (b.id === fr.budgetId ? { ...b, committed: newCommitted, spent: newSpent } : b)));
+      const ceo = { ...fr.ceo, status: 'pending' };
+      log('Accountant approved — within budget & policy', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.CEO, title: 'Request awaiting CEO approval', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Approved — forwarded to CEO');
+      persistUpdate(TABLES.financeRequests, id, { accountant_review: accountantReviewObj, ceo, status: 'pending_ceo' }, 'finance request');
+      persistUpdate(TABLES.budgets, fr.budgetId, { committed: newCommitted, spent: newSpent }, 'budget totals');
+      return { ...fr, accountantReview: accountantReviewObj, ceo, status: 'pending_ceo' };
+    }));
+  }, [currentUser, budgets, log, notify, showToast, persistUpdate, releaseCommitted]);
+
+  // Stage 4 — CEO final approval. A decline here reverses the spend Accountant already recorded.
+  const financeCeoApprove = useCallback((id, approve, comment) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const ceo = { ...fr.ceo, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
+      if (!approve) {
+        const budget = budgets.find((b) => b.id === fr.budgetId);
+        const newSpent = budget ? Math.max(0, budget.spent - fr.amount) : 0;
+        setBudgets((prevB) => prevB.map((b) => (b.id === fr.budgetId ? { ...b, spent: newSpent } : b)));
+        persistUpdate(TABLES.budgets, fr.budgetId, { spent: newSpent }, 'budget totals');
+        log('CEO declined request', 'Finance', id, comment || 'No comment provided');
+        notify({ userId: fr.submittedById, title: 'Request declined', message: `${fr.vendor || fr.description} — ${comment || 'Declined by CEO'}`, module: 'Finance', targetId: id });
+        showToast('Request declined', 'warn');
+        persistUpdate(TABLES.financeRequests, id, { ceo, status: 'returned_by_ceo' }, 'finance request');
+        return { ...fr, ceo, status: 'returned_by_ceo' };
+      }
+      const payment = { ...fr.payment, status: 'pending' };
+      log('CEO approved request', 'Finance', id, comment || fr.vendor);
+      notify({ role: ROLES.BOOKKEEPER_FINANCE, title: 'Request awaiting payment', message: `${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Approved — forwarded to Bookkeeper for payment');
+      persistUpdate(TABLES.financeRequests, id, { ceo, payment, status: 'pending_payment' }, 'finance request');
+      return { ...fr, ceo, payment, status: 'pending_payment' };
+    }));
+  }, [currentUser, budgets, log, notify, showToast, persistUpdate]);
+
+  // Stage 5 — Bookkeeper: process and record the payment.
+  const processPayment = useCallback((id, reference) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const payment = { status: 'paid', reference: reference || null, processedBy: currentUser.name, processedDate: today() };
+      log('Processed and recorded payment', 'Finance', id, `${fr.vendor || fr.description} — R${fr.amount.toLocaleString()}${reference ? ` · ${reference}` : ''}`);
+      notify({ userId: fr.submittedById, title: 'Payment processed', message: `R${fr.amount.toLocaleString()} — ${fr.vendor || fr.description}`, module: 'Finance', targetId: id });
+      showToast('Payment processed and recorded');
+      persistUpdate(TABLES.financeRequests, id, { payment, status: 'completed' }, 'finance request');
+      return { ...fr, payment, status: 'completed' };
+    }));
+  }, [currentUser, log, notify, showToast, persistUpdate]);
+
+  // Requester edits a returned request and resubmits — restarts at the first stage of
+  // whichever chain applies (Entrepreneur Dev. Advisor for APR, otherwise Line Manager),
+  // matching the source diagram where every return path leads back to "submit request form".
+  const resubmitFinanceRequest = useCallback((id, patch) => {
+    setFinanceRequests((prev) => prev.map((fr) => {
+      if (fr.id !== id) return fr;
+      const merged = { ...fr, ...patch, amount: patch.amount != null ? Number(patch.amount) : fr.amount };
+      const isApr = merged.requestType === 'apr';
+      const budget = budgets.find((b) => b.id === merged.budgetId);
+      const newCommitted = budget ? budget.committed + merged.amount : merged.amount;
+      setBudgets((prevB) => prevB.map((b) => (b.id === merged.budgetId ? { ...b, committed: newCommitted } : b)));
+      const status = isApr ? 'pending_eda' : 'pending_line_manager';
+      const eda = { approverId: null, approverName: '', status: isApr ? 'pending' : 'not_applicable', date: null, comment: '' };
+      const mentor = { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' };
+      const lineManager = { approverId: null, approverName: '', status: isApr ? 'not_started' : 'pending', date: null, comment: '' };
+      const bookkeeperVerification = { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' };
+      const accountantReviewObj = { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' };
+      const ceo = { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' };
+      const returnCount = (fr.returnCount || 0) + 1;
+      log('Resubmitted request', 'Finance', id, `${merged.vendor || merged.description} — R${merged.amount.toLocaleString()}`);
+      notify({
+        role: isApr ? ROLES.ENTREPRENEUR_DEV_ADVISOR : ROLES.LINE_MANAGER,
+        title: isApr ? 'APR resubmitted — awaiting Entrepreneur Development Advisor review' : 'Request resubmitted — awaiting Line Manager review',
+        message: `${merged.vendor || merged.description}`, module: 'Finance', targetId: id,
+      });
+      showToast('Request resubmitted');
+      persistUpdate(TABLES.financeRequests, id, {
+        vendor: merged.vendor, description: merged.description, category: merged.category, amount: merged.amount,
+        budget_id: merged.budgetId, procurement_ref: merged.procurementRef || '', beneficiary_development_plan: merged.beneficiaryDevelopmentPlan || '',
+        eda, mentor, line_manager: lineManager, bookkeeper_verification: bookkeeperVerification, accountant_review: accountantReviewObj, ceo,
+        status, return_count: returnCount,
+      }, 'finance request');
+      persistUpdate(TABLES.budgets, merged.budgetId, { committed: newCommitted }, 'budget commitment');
+      return { ...merged, eda, mentor, lineManager, bookkeeperVerification, accountantReview: accountantReviewObj, ceo, status, returnCount };
     }));
   }, [budgets, log, notify, showToast, persistUpdate]);
-
-  const approveInvoiceLevel2 = useCallback((id, approve, comment) => {
-    setInvoices((prev) => prev.map((inv) => {
-      if (inv.id !== id) return inv;
-      const level2 = { ...inv.level2, status: approve ? 'approved' : 'rejected', date: today(), comment };
-      const budget = budgets.find((b) => b.id === inv.budgetId);
-      if (!approve) {
-        const newCommitted = budget ? Math.max(0, budget.committed - inv.amount) : 0;
-        setBudgets((prevB) => prevB.map((b) => (b.id === inv.budgetId ? { ...b, committed: newCommitted } : b)));
-        log('Rejected invoice (Level 2)', 'Finance', id, comment || 'No comment provided');
-        showToast('Invoice rejected', 'warn');
-        persistUpdate(TABLES.invoices, id, { level2, status: 'rejected' }, 'invoice');
-        persistUpdate(TABLES.budgets, inv.budgetId, { committed: newCommitted }, 'budget commitment');
-        return { ...inv, level2, status: 'rejected' };
-      }
-      const newCommitted = budget ? Math.max(0, budget.committed - inv.amount) : 0;
-      const newSpent = budget ? budget.spent + inv.amount : inv.amount;
-      setBudgets((prevB) => prevB.map((b) => (b.id === inv.budgetId ? { ...b, committed: newCommitted, spent: newSpent } : b)));
-      log('Approved invoice (Level 2) — payment released', 'Finance', id, `${inv.vendor} — R${inv.amount.toLocaleString()}`);
-      showToast('Invoice approved — payment released');
-      persistUpdate(TABLES.invoices, id, { level2, status: 'paid' }, 'invoice');
-      persistUpdate(TABLES.budgets, inv.budgetId, { committed: newCommitted, spent: newSpent }, 'budget totals');
-      return { ...inv, level2, status: 'paid' };
-    }));
-  }, [budgets, log, showToast, persistUpdate]);
 
   // ---------- Document Control ----------
   const uploadDocument = useCallback((data) => {
@@ -555,7 +780,7 @@ export function AppProvider({ children }) {
     log('Created user account', 'Admin', u.id, `${u.name} — ${u.role}`);
     showToast('User created');
     persistInsert(TABLES.users, {
-      id: u.id, name: u.name, email: u.email, role: u.role, department: u.department, title: u.title, active: u.active, initials: u.initials,
+      id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, department: u.department, title: u.title, active: u.active, initials: u.initials,
     }, 'user account');
   }, [log, showToast, persistInsert]);
 
@@ -648,16 +873,43 @@ export function AppProvider({ children }) {
         items.push({ id: `pay-${tr.id}`, module: 'Travel', label: `Issue payment — ${tr.requesterName}`, detail: `${tr.destination}`, targetId: tr.id, priority: 'normal' });
       });
     }
-    if (canWith(effectivePermissions, role, 'finance', 'approveLevel1')) {
-      invoices.filter((inv) => inv.status === 'pending_level1').forEach((inv) => {
-        items.push({ id: `i1-${inv.id}`, module: 'Finance', label: `Invoice Level 1 — ${inv.vendor}`, detail: `R${inv.amount.toLocaleString()}`, targetId: inv.id, priority: 'normal' });
+    if (canWith(effectivePermissions, role, 'finance', 'edaReview')) {
+      financeRequests.filter((fr) => fr.status === 'pending_eda').forEach((fr) => {
+        items.push({ id: `eda-${fr.id}`, module: 'Finance', label: `EDA review — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
       });
     }
-    if (canWith(effectivePermissions, role, 'finance', 'approveLevel2')) {
-      invoices.filter((inv) => inv.status === 'pending_level2').forEach((inv) => {
-        items.push({ id: `i2-${inv.id}`, module: 'Finance', label: `Invoice Level 2 — ${inv.vendor}`, detail: `R${inv.amount.toLocaleString()}`, targetId: inv.id, priority: 'normal' });
+    if (canWith(effectivePermissions, role, 'finance', 'mentorApprove')) {
+      financeRequests.filter((fr) => fr.status === 'pending_mentor').forEach((fr) => {
+        items.push({ id: `mnt-${fr.id}`, module: 'Finance', label: `Mentor approval — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
       });
     }
+    if (canWith(effectivePermissions, role, 'finance', 'lineManagerReview')) {
+      financeRequests.filter((fr) => fr.status === 'pending_line_manager').forEach((fr) => {
+        items.push({ id: `lm-${fr.id}`, module: 'Finance', label: `Line Manager review — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
+      });
+    }
+    if (canWith(effectivePermissions, role, 'finance', 'bookkeeperVerify')) {
+      financeRequests.filter((fr) => fr.status === 'pending_bookkeeper_verification').forEach((fr) => {
+        items.push({ id: `bkv-${fr.id}`, module: 'Finance', label: `Bookkeeper verification — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
+      });
+      financeRequests.filter((fr) => fr.status === 'pending_payment').forEach((fr) => {
+        items.push({ id: `paypf-${fr.id}`, module: 'Finance', label: `Issue payment — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
+      });
+    }
+    if (canWith(effectivePermissions, role, 'finance', 'accountantReview')) {
+      financeRequests.filter((fr) => fr.status === 'pending_accountant_review').forEach((fr) => {
+        items.push({ id: `acr-${fr.id}`, module: 'Finance', label: `Accountant review — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
+      });
+    }
+    if (canWith(effectivePermissions, role, 'finance', 'ceoApprove')) {
+      financeRequests.filter((fr) => fr.status === 'pending_ceo').forEach((fr) => {
+        items.push({ id: `fceo-${fr.id}`, module: 'Finance', label: `CEO approval — ${fr.vendor || fr.description}`, detail: `R${fr.amount.toLocaleString()}`, targetId: fr.id, priority: 'normal' });
+      });
+    }
+    financeRequests.filter((fr) => fr.submittedById === currentUser.id && String(fr.status || '').startsWith('returned_by_')).forEach((fr) => {
+      const stageComment = fr.eda?.comment || fr.mentor?.comment || fr.lineManager?.comment || fr.bookkeeperVerification?.comment || fr.accountantReview?.comment || fr.ceo?.comment || '';
+      items.push({ id: `frret-${fr.id}`, module: 'Finance', label: `Returned for corrections — ${fr.vendor || fr.description}`, detail: stageComment || 'Edit and resubmit', targetId: fr.id, priority: 'high' });
+    });
     if (canWith(effectivePermissions, role, 'documents', 'review')) {
       documents.filter((d) => d.status === 'pending_review').forEach((d) => {
         items.push({ id: `dr-${d.id}`, module: 'Documents', label: `Review — ${d.title}`, detail: `v${d.currentVersion} · ${d.type}`, targetId: d.id, priority: 'normal' });
@@ -673,7 +925,7 @@ export function AppProvider({ children }) {
       items.push({ id: `cl-${tr.id}`, module: 'Travel', label: `Cleared for travel — ${tr.destination}`, detail: 'Retain receipts and submit an expense claim afterward', targetId: tr.id, priority: 'low' });
     });
     return items;
-  }, [role, currentUser, travelRequests, invoices, documents, effectivePermissions]);
+  }, [role, currentUser, travelRequests, financeRequests, documents, effectivePermissions]);
 
   const myNotifications = useMemo(() => {
     return notifications.filter((n) => (n.role && n.role === role) || (n.userId && n.userId === currentUser.id));
@@ -686,10 +938,11 @@ export function AppProvider({ children }) {
   const value = {
     currentUser, role, users, switchRole, demoRoster,
     loading, loadError,
+    projects, addProject, toggleProjectActive,
     budgets, createBudget, adjustBudgetAllocation, budgetAvailable,
     travelRequests, submitTravelRequest, hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
     ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,
-    invoices, submitInvoice, approveInvoiceLevel1, approveInvoiceLevel2,
+    financeRequests, submitFinanceRequest, edaReview, mentorApprove, lineManagerReview, bookkeeperVerify, accountantReview, financeCeoApprove, processPayment, resubmitFinanceRequest,
     documents, uploadDocument, addDocumentVersion, reviewDocument, archiveDocument,
     addUser, updateUserRole, toggleUserActive,
     rolePermissions: effectivePermissions, updatePermission, updateViewScope,

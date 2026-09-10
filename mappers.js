@@ -10,11 +10,23 @@ export function mapUser(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    phone: row.phone || '',
     role: row.role,
     department: row.department,
     title: row.title,
     active: row.active,
     initials: row.initials,
+  };
+}
+
+export function mapProject(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.code || '',
+    department: row.department || '',
+    active: row.active,
+    createdDate: row.created_date,
   };
 }
 
@@ -62,6 +74,17 @@ export function mapTravelRequest(row, expenseRows = []) {
     budgetId: row.budget_id,
     status: row.status,
     createdDate: row.created_date,
+    // Rebuilt 2026-09-10 intake fields: multiple travelers (booking on behalf of colleagues),
+    // a Project allocation (separate from the Budget Line used for financial tracking), and a
+    // multi-leg itinerary — see src/components/travel/TravelRequestForm.jsx.
+    travelers: row.travelers || [],
+    noOfTravelers: row.no_of_travelers || (row.travelers || []).length || 1,
+    projectId: row.project_id || '',
+    businessActivity: row.business_activity || '',
+    travelJustification: row.travel_justification || '',
+    sntAdvanceRequired: !!row.sant_advance_required,
+    multiItinerary: !!row.multi_itinerary,
+    itinerary: row.itinerary || [],
     // Six-stage approval chain (ATMS-FRM-001): HOD -> Travel Office (quality) -> Bookkeeper (booking)
     // -> Finance Manager (budget/policy) -> CEO -> Board Treasurer (conditional, high-value only).
     hod: row.hod || { approverId: null, approverName: '', status: 'pending', date: null, comment: '' },
@@ -77,20 +100,34 @@ export function mapTravelRequest(row, expenseRows = []) {
   };
 }
 
-export function mapInvoice(row) {
+// Finance Hub requests (FIN-01/02/03): a shared five-stage flow — Line Manager ->
+// Bookkeeper -> Accountant -> CEO -> payment — used by all eight request types. APR
+// (Asset Purchase Request) additionally routes through an Entrepreneur Development
+// Advisor and a Mentor before Line Manager review (see src/data/permissions.js header).
+export function mapFinanceRequest(row) {
   return {
     id: row.id,
+    requestType: row.request_type,
     vendor: row.vendor,
     description: row.description,
     category: row.category,
     amount: num(row.amount),
     budgetId: row.budget_id,
     linkedTravelRequestId: row.linked_travel_request_id,
+    procurementRef: row.procurement_ref || '',
+    beneficiaryDevelopmentPlan: row.beneficiary_development_plan || '',
     submittedBy: row.submitted_by,
+    submittedById: row.submitted_by_id,
     submittedDate: row.submitted_date,
     status: row.status,
-    level1: row.level1 || {},
-    level2: row.level2 || {},
+    eda: row.eda || { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' },
+    mentor: row.mentor || { approverId: null, approverName: '', status: 'not_applicable', date: null, comment: '' },
+    lineManager: row.line_manager || { approverId: null, approverName: '', status: 'pending', date: null, comment: '' },
+    bookkeeperVerification: row.bookkeeper_verification || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    accountantReview: row.accountant_review || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    ceo: row.ceo || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
+    payment: row.payment || { status: 'not_started', reference: null, processedBy: null, processedDate: null },
+    returnCount: row.return_count || 0,
   };
 }
 

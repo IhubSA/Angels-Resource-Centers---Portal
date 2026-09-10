@@ -13,9 +13,21 @@ function TimelineIcon({ status }) {
   return <div className="timeline-icon" style={{ background: 'var(--slate-bg)', color: 'var(--slate)' }}><Clock size={14} /></div>;
 }
 
+const TRAVEL_TYPE_LABELS = { air: 'Air', road: 'Road', air_road: 'Air & Road', accommodation: 'Accommodation only' };
+const RENTAL_CAR_LABELS = { none: 'Not required', B: 'B Class — small passenger vehicle', O: 'O Class — larger vehicle for equipment' };
+
+function formatDateTime(dt) {
+  if (!dt) return '—';
+  try {
+    return new Date(dt).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return dt;
+  }
+}
+
 export default function TravelDetail({ requestId, onClose }) {
   const {
-    travelRequests, budgets, can, currentUser,
+    travelRequests, budgets, projects, can, currentUser,
     hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
     ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,
   } = useApp();
@@ -29,6 +41,7 @@ export default function TravelDetail({ requestId, onClose }) {
 
   if (!tr) return null;
   const budget = budgets.find((b) => b.id === tr.budgetId);
+  const project = projects.find((p) => p.id === tr.projectId);
 
   const canHod = can('travel', 'hodReview') && tr.status === 'pending_hod';
   const canQuality = can('travel', 'qualityReview') && tr.status === 'pending_quality';
@@ -58,13 +71,47 @@ export default function TravelDetail({ requestId, onClose }) {
           </div>
 
           <div className="kv-list" style={{ marginBottom: 16 }}>
-            <div className="kv-row"><span className="k">Purpose</span><span className="v">{tr.purpose}</span></div>
+            <div className="kv-row"><span className="k">Business Activity</span><span className="v">{tr.businessActivity || tr.purpose}</span></div>
             <div className="kv-row"><span className="k">Dates</span><span className="v">{formatDate(tr.startDate)} – {formatDate(tr.endDate)}</span></div>
             <div className="kv-row"><span className="k">Department</span><span className="v">{tr.department}</span></div>
+            <div className="kv-row"><span className="k">Project</span><span className="v">{project?.name || tr.projectId || '—'}</span></div>
             <div className="kv-row"><span className="k">Estimated Cost</span><span className="v">{money(tr.estimatedCost)}</span></div>
             {tr.booking.actualCost != null && <div className="kv-row"><span className="k">Actual (booked) Cost</span><span className="v">{money(tr.booking.actualCost)}</span></div>}
             <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget?.name || tr.budgetId}</span></div>
+            <div className="kv-row"><span className="k">S&T's Advance Required</span><span className="v">{tr.sntAdvanceRequired ? 'Yes' : 'No'}</span></div>
+            {tr.travelJustification && <div className="kv-row"><span className="k">Travel Justification</span><span className="v">{tr.travelJustification}</span></div>}
           </div>
+
+          {tr.travelers?.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="section-title">Traveler{tr.travelers.length > 1 ? 's' : ''} ({tr.noOfTravelers || tr.travelers.length})</div>
+              <div className="kv-list">
+                {tr.travelers.map((t) => (
+                  <div className="kv-row" key={t.id || t.name}><span className="k">{t.name}</span><span className="v">{[t.department, t.email, t.phone].filter(Boolean).join(' · ')}</span></div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tr.itinerary?.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="section-title">Itinerary ({tr.itinerary.length} leg{tr.itinerary.length === 1 ? '' : 's'})</div>
+              {tr.itinerary.map((leg, i) => (
+                <div key={leg.id || i} className="card" style={{ marginBottom: 8 }}>
+                  <div style={{ padding: 12 }}>
+                    <div style={{ fontWeight: 650, marginBottom: 4 }}>{i + 1}. {leg.destination} — {TRAVEL_TYPE_LABELS[leg.travelType] || leg.travelType}</div>
+                    <div className="kv-list">
+                      <div className="kv-row"><span className="k">Departs</span><span className="v">{formatDateTime(leg.departDateTime)}</span></div>
+                      {leg.roundTrip && <div className="kv-row"><span className="k">Returns</span><span className="v">{formatDateTime(leg.returnDateTime)}</span></div>}
+                      <div className="kv-row"><span className="k">Rental Car</span><span className="v">{RENTAL_CAR_LABELS[leg.rentalCar] || 'Not required'}</span></div>
+                      {leg.secondDriverRequired && leg.secondDriverName && <div className="kv-row"><span className="k">Second Driver</span><span className="v">{leg.secondDriverName}</span></div>}
+                      {leg.accommodationRequired && <div className="kv-row"><span className="k">Accommodation</span><span className="v">{leg.accommodationDetails || 'Required — details not specified'}</span></div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="section-title">Six-Stage Approval Chain</div>
           <div className="timeline">

@@ -13,9 +13,18 @@ const STATUS_MAP = {
   not_applicable: { label: 'N/A', tone: 'slate' },
   active: { label: 'Active', tone: 'green' },
   inactive: { label: 'Inactive', tone: 'slate' },
-  // finance invoices (unrelated to travel — kept for InvoicesPanel)
-  pending_level1: { label: 'Pending L1 Approval', tone: 'amber' },
-  pending_level2: { label: 'Pending L2 Approval', tone: 'blue' },
+  // finance hub requests — shared chain (FIN-01/02/03)
+  pending_eda: { label: 'Pending EDA Review', tone: 'amber' },
+  pending_mentor: { label: 'Pending Mentor Approval', tone: 'amber' },
+  pending_line_manager: { label: 'Pending Line Manager Review', tone: 'amber' },
+  pending_bookkeeper_verification: { label: 'Pending Bookkeeper Verification', tone: 'amber' },
+  pending_accountant_review: { label: 'Pending Accountant Review', tone: 'amber' },
+  returned_by_eda: { label: 'Returned by EDA', tone: 'red' },
+  returned_by_mentor: { label: 'Returned by Mentor', tone: 'red' },
+  returned_by_line_manager: { label: 'Returned by Line Manager', tone: 'red' },
+  returned_by_bookkeeper: { label: 'Returned by Bookkeeper', tone: 'red' },
+  returned_by_accountant: { label: 'Returned by Accountant', tone: 'red' },
+  returned_by_ceo: { label: 'Declined by CEO', tone: 'red' },
   // travel — six-stage approval chain (ATMS-FRM-001)
   pending_hod: { label: 'Pending HOD Review', tone: 'amber' },
   pending_quality: { label: 'Travel Office Quality Review', tone: 'amber' },

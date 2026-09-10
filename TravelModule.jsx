@@ -83,7 +83,7 @@ export default function TravelModule() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>ID</th><th>Requester</th><th>Destination</th><th>Dates</th><th>Est. Cost</th><th>Status</th><th></th>
+                  <th>ID</th><th>Requester</th><th>Destination</th><th>Travelers</th><th>Dates</th><th>Est. Cost</th><th>Status</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -93,7 +93,9 @@ export default function TravelModule() {
                     <td>{tr.requesterName}</td>
                     <td>
                       <button className="row-link" onClick={() => setSelected(tr.id)}>{tr.destination}</button>
+                      {tr.itinerary?.length > 1 && <span className="cell-muted" style={{ fontSize: 11 }}> · {tr.itinerary.length} legs</span>}
                     </td>
+                    <td className="cell-muted">{tr.noOfTravelers || tr.travelers?.length || 1}</td>
                     <td className="cell-muted">{formatDate(tr.startDate)} – {formatDate(tr.endDate)}</td>
                     <td className="cell-mono">{money(tr.estimatedCost)}</td>
                     <td><StatusBadge status={tr.status} /></td>
