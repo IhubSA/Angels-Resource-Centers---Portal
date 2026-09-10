@@ -1,4 +1,5 @@
-import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel, UserCheck, Calculator, HeartHandshake, GraduationCap } from 'lucide-react';
+import { useState } from 'react';
+import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel, UserCheck, Calculator, HeartHandshake, GraduationCap, Link2, Copy, Check } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, BOARD_TREASURER_THRESHOLD } from '../../data/permissions';
 import StatusBadge from '../common/StatusBadge';
@@ -8,6 +9,25 @@ const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };
 
 export default function Dashboard({ setView }) {
   const { currentUser, role, travelRequests, financeRequests, documents, budgets, auditLog, pendingActions, users, scope } = useApp();
+  const [linkCopied, setLinkCopied] = useState(false);
+  const publicRequestLink = `${window.location.origin}${window.location.pathname}#/request`;
+
+  function handleCopyPublicLink() {
+    const markCopied = () => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(publicRequestLink).then(markCopied).catch(() => {
+        // Fallback for browsers/contexts that block the async clipboard API.
+        const el = document.createElement('textarea');
+        el.value = publicRequestLink;
+        el.style.position = 'fixed';
+        el.style.opacity = '0';
+        document.body.appendChild(el);
+        el.select();
+        try { document.execCommand('copy'); markCopied(); } catch (e) { /* copy not available */ }
+        document.body.removeChild(el);
+      });
+    }
+  }
 
   const travelScope = scope('travel');
   const scopedTravel = travelRequests.filter((tr) => {
@@ -172,6 +192,24 @@ export default function Dashboard({ setView }) {
           <p className="page-subtitle">{ROLE_LABELS[role]} · {ROLE_DESCRIPTIONS[role]}</p>
         </div>
       </div>
+
+      {role === ROLES.ADMIN && (
+        <div className="card card-pad" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 240 }}>
+            <span className="stat-tile-icon" style={{ background: 'var(--brand-light)', color: 'var(--brand)', flexShrink: 0 }}><Link2 size={16} /></span>
+            <div>
+              <div style={{ fontWeight: 650, fontSize: 13.5 }}>Public Request Link</div>
+              <div className="hint" style={{ margin: 0 }}>Share this with travelers so they can submit a Travel or Finance Hub request without logging into the system.</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <code style={{ fontSize: 12, background: 'var(--bg)', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{publicRequestLink}</code>
+            <button className="btn btn-secondary btn-sm" onClick={handleCopyPublicLink}>
+              {linkCopied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy Link</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
         {stats.map((s) => (
