@@ -123,6 +123,11 @@ export function AppProvider({ children }) {
     if (u) setCurrentUserId(u.id);
   }, [users]);
 
+  // Lets the standalone public request page (src/components/public/PublicRequestPage.jsx,
+  // 2026-09-10) set "who's submitting this" directly by user id, since a visitor there picks
+  // themselves from a list rather than using the internal demo role switcher.
+  const identifyAs = useCallback((userId) => setCurrentUserId(userId), []);
+
   const demoRoster = useMemo(
     () => DEMO_ROLE_ORDER.map((r) => users.find((u) => u.role === r)).filter(Boolean),
     [users]
@@ -1011,7 +1016,7 @@ export function AppProvider({ children }) {
   }, [role, currentUser]);
 
   const value = {
-    currentUser, role, users, switchRole, demoRoster,
+    currentUser, role, users, switchRole, demoRoster, identifyAs,
     loading, loadError,
     projects, addProject, toggleProjectActive,
     budgets, createBudget, addBudgetLineItem, updateBudgetGroup, adjustBudgetAllocation, budgetAvailable,
