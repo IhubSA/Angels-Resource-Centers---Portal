@@ -16,14 +16,20 @@ function download(filename, content, type = 'text/csv') {
 }
 
 export default function ReportsPanel() {
-  const { budgets, projects, travelRequests, financeRequests, showToast } = useApp();
+  const { budgets, projects, mainProjects, travelRequests, financeRequests, showToast } = useApp();
 
   function exportBudgetReport() {
-    const rows = budgets.map((b) => ({
-      id: b.id, budgetName: b.groupName, lineItem: b.name, project: projects.find((p) => p.id === b.projectId)?.name || '',
-      department: b.department, allocated: b.allocated, committed: b.committed, spent: b.spent, available: b.allocated - b.committed - b.spent,
-    }));
-    download('budget_vs_actual_FY2026.csv', toCsv(rows, ['id', 'budgetName', 'lineItem', 'project', 'department', 'allocated', 'committed', 'spent', 'available']));
+    const rows = budgets.map((b) => {
+      const costCodeIds = b.costCodeIds && b.costCodeIds.length > 0 ? b.costCodeIds : (b.projectId ? [b.projectId] : []);
+      const costCodeNames = costCodeIds.map((id) => projects.find((p) => p.id === id)?.name).filter(Boolean).join('; ');
+      return {
+        id: b.id, budgetName: b.groupName, lineItem: b.name,
+        mainProject: mainProjects.find((mp) => mp.id === b.mainProjectId)?.name || '',
+        costCodes: costCodeNames,
+        department: b.department, allocated: b.allocated, committed: b.committed, spent: b.spent, available: b.allocated - b.committed - b.spent,
+      };
+    });
+    download('budget_vs_actual_FY2026.csv', toCsv(rows, ['id', 'budgetName', 'lineItem', 'mainProject', 'costCodes', 'department', 'allocated', 'committed', 'spent', 'available']));
     showToast('Budget vs. Actual report exported');
   }
   function exportExpenseReport() {

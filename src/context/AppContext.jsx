@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ROLES, canWith, viewScopeWith, DEFAULT_PERMISSIONS, BOARD_TREASURER_THRESHOLD } from '../data/permissions';
 import { supabase, TABLES } from '../lib/supabaseClient';
-import { mapUser, mapProject, mapBudget, mapTravelRequest, mapFinanceRequest, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
+import { mapUser, mapProject, mapMainProject, mapBudget, mapTravelRequest, mapFinanceRequest, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
 
 const AppContext = createContext(null);
 
@@ -28,6 +28,7 @@ export function AppProvider({ children }) {
   const [currentUserId, setCurrentUserId] = useState('u1');
   const [users, setUsers] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [mainProjects, setMainProjects] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [travelRequests, setTravelRequests] = useState([]);
   const [financeRequests, setFinanceRequests] = useState([]);
@@ -57,9 +58,10 @@ export function AppProvider({ children }) {
       setLoading(true);
       setLoadError(null);
       try {
-        const [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
+        const [usersRes, projectsRes, mainProjectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
           supabase.from(TABLES.users).select('*').order('id'),
           supabase.from(TABLES.projects).select('*').order('name'),
+          supabase.from(TABLES.mainProjects).select('*').order('name'),
           supabase.from(TABLES.budgets).select('*').order('id'),
           supabase.from(TABLES.travelRequests).select('*').order('created_date', { ascending: false }),
           supabase.from(TABLES.travelExpenses).select('*'),
@@ -69,12 +71,13 @@ export function AppProvider({ children }) {
           supabase.from(TABLES.auditLog).select('*').order('ts', { ascending: false }),
           supabase.from(TABLES.rolePermissions).select('*'),
         ]);
-        const firstError = [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes]
+        const firstError = [usersRes, projectsRes, mainProjectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes]
           .map((r) => r.error).find(Boolean);
         if (firstError) throw firstError;
         if (cancelled) return;
         setUsers(usersRes.data.map(mapUser));
         setProjects(projectsRes.data.map(mapProject));
+        setMainProjects(mainProjectsRes.data.map(mapMainProject));
         setBudgets(budgetsRes.data.map(mapBudget));
         setTravelRequests(travelRes.data.map((r) => mapTravelRequest(r, expensesRes.data)));
         setFinanceRequests(financeRes.data.map(mapFinanceRequest));
@@ -140,11 +143,11 @@ export function AppProvider({ children }) {
   // pick as their "Budget Line" and commit/spend against), sharing a groupId/groupName so they
   // display together — this keeps all the existing per-row committed/spent bookkeeping untouched.
   const createBudget = useCallback((data) => {
-    const { lineItems, groupName, projectId, department, owner, fiscalYear } = data;
+    const { lineItems, groupName, mainProjectId, costCodeIds, department, owner, fiscalYear } = data;
     const groupId = nextId('BGRP');
     const rows = lineItems.map((li) => ({
-      id: nextId('B'), groupId, groupName, projectId: projectId || '', department, owner, fiscalYear,
-      name: li.name, allocated: Number(li.allocated) || 0, committed: 0, spent: 0,
+      id: nextId('B'), groupId, groupName, mainProjectId: mainProjectId || '', costCodeIds: costCodeIds || [],
+      department, owner, fiscalYear, name: li.name, allocated: Number(li.allocated) || 0, committed: 0, spent: 0,
     }));
     setBudgets((prev) => [...rows, ...prev]);
     const total = rows.reduce((s, r) => s + r.allocated, 0);
@@ -152,7 +155,8 @@ export function AppProvider({ children }) {
     showToast(`Budget "${groupName}" created`);
     rows.forEach((r) => {
       persistInsert(TABLES.budgets, {
-        id: r.id, name: r.name, group_id: r.groupId, group_name: r.groupName, project_id: r.projectId || null,
+        id: r.id, name: r.name, group_id: r.groupId, group_name: r.groupName,
+        main_project_id: r.mainProjectId || null, cost_code_ids: r.costCodeIds,
         fiscal_year: r.fiscalYear, department: r.department, owner: r.owner,
         allocated: r.allocated, committed: r.committed, spent: r.spent,
       }, 'new budget line item');
@@ -160,12 +164,12 @@ export function AppProvider({ children }) {
   }, [log, showToast, persistInsert]);
 
   // Add one more line item to an existing budget group later (e.g. add "Meetings" after the
-  // fact), inheriting that group's Project/Department/Owner/Fiscal Year.
+  // fact), inheriting that group's Main Project/Cost Codes/Department/Owner/Fiscal Year.
   const addBudgetLineItem = useCallback((groupId, { name, allocated }) => {
     const sibling = budgets.find((b) => b.groupId === groupId);
     if (!sibling) return;
     const b = {
-      id: nextId('B'), groupId, groupName: sibling.groupName, projectId: sibling.projectId,
+      id: nextId('B'), groupId, groupName: sibling.groupName, mainProjectId: sibling.mainProjectId, costCodeIds: sibling.costCodeIds,
       department: sibling.department, owner: sibling.owner, fiscalYear: sibling.fiscalYear,
       name, allocated: Number(allocated) || 0, committed: 0, spent: 0,
     };
@@ -173,20 +177,23 @@ export function AppProvider({ children }) {
     log('Added budget line item', 'Finance', b.id, `${sibling.groupName} — added "${name}", R${b.allocated.toLocaleString()}`);
     showToast(`Line item "${name}" added`);
     persistInsert(TABLES.budgets, {
-      id: b.id, name: b.name, group_id: b.groupId, group_name: b.groupName, project_id: b.projectId || null,
+      id: b.id, name: b.name, group_id: b.groupId, group_name: b.groupName,
+      main_project_id: b.mainProjectId || null, cost_code_ids: b.costCodeIds,
       fiscal_year: b.fiscalYear, department: b.department, owner: b.owner,
       allocated: b.allocated, committed: b.committed, spent: b.spent,
     }, 'new budget line item');
   }, [budgets, log, showToast, persistInsert]);
 
-  // Re-link an entire budget group (all its line items) to a different Project/Department/Owner.
+  // Re-link an entire budget group (all its line items) to a different Main Project/Cost
+  // Codes/Department/Owner.
   const updateBudgetGroup = useCallback((groupId, patch) => {
     setBudgets((prev) => prev.map((b) => (b.groupId === groupId ? { ...b, ...patch } : b)));
     const group = budgets.find((b) => b.groupId === groupId);
     log('Updated budget group', 'Finance', groupId, `${group?.groupName || groupId} — settings updated`);
     showToast('Budget updated');
     const dbPatch = {};
-    if ('projectId' in patch) dbPatch.project_id = patch.projectId || null;
+    if ('mainProjectId' in patch) dbPatch.main_project_id = patch.mainProjectId || null;
+    if ('costCodeIds' in patch) dbPatch.cost_code_ids = patch.costCodeIds || [];
     if ('department' in patch) dbPatch.department = patch.department;
     if ('owner' in patch) dbPatch.owner = patch.owner;
     supabase.from(TABLES.budgets).update(dbPatch).eq('group_id', groupId)
@@ -208,12 +215,13 @@ export function AppProvider({ children }) {
   // programme/initiative the trip supports) AND separately a Budget Line (which pot of money
   // pays for it), per Brent's choice on 2026-09-10.
   const addProject = useCallback((data) => {
-    const p = { id: nextId('PRJ'), active: true, createdDate: today(), ...data };
+    const p = { id: nextId('PRJ'), active: true, createdDate: today(), mainProjectId: '', ...data };
     setProjects((prev) => [...prev, p]);
     log('Created project', 'Admin', p.id, p.name);
     showToast('Project created');
     persistInsert(TABLES.projects, {
       id: p.id, name: p.name, code: p.code || '', department: p.department || '', active: p.active, created_date: p.createdDate,
+      main_project_id: p.mainProjectId || null,
     }, 'project');
   }, [log, showToast, persistInsert]);
 
@@ -225,6 +233,27 @@ export function AppProvider({ children }) {
     showToast(p?.active ? 'Project deactivated' : 'Project activated');
     persistUpdate(TABLES.projects, id, { active: newActive }, 'project status');
   }, [projects, log, showToast, persistUpdate]);
+
+  // ---------- Admin: Main Projects (client/programme umbrella) ----------
+  // A "Main Project" (e.g. "Anthem", "ENGIE") groups several individual Projects/Cost Codes
+  // together — added 2026-09-10 per Brent's request so Budgets can be named/organized at the
+  // client level while a budget's actual spend still tracks against specific Cost Codes.
+  const addMainProject = useCallback((name) => {
+    const mp = { id: nextId('MPRJ'), name, createdDate: today() };
+    setMainProjects((prev) => [...prev, mp]);
+    log('Created main project', 'Admin', mp.id, mp.name);
+    persistInsert(TABLES.mainProjects, { id: mp.id, name: mp.name, created_date: mp.createdDate }, 'main project');
+    return mp;
+  }, [log, persistInsert]);
+
+  // Assign (or clear, with mainProjectId = '') which Main Project a Project/Cost Code sits under.
+  const setProjectMainProject = useCallback((projectId, mainProjectId) => {
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, mainProjectId } : p)));
+    const p = projects.find((x) => x.id === projectId);
+    const mp = mainProjects.find((x) => x.id === mainProjectId);
+    log('Updated project grouping', 'Admin', projectId, `${p?.name || projectId} → ${mp?.name || 'no main project'}`);
+    persistUpdate(TABLES.projects, projectId, { main_project_id: mainProjectId || null }, 'project main project');
+  }, [projects, mainProjects, log, persistUpdate]);
 
   // ---------- Travel Management ----------
   // Six-stage approval chain per ATMS-FRM-001: HOD -> Travel Office (quality) -> Bookkeeper (booking)
@@ -1019,6 +1048,7 @@ export function AppProvider({ children }) {
     currentUser, role, users, switchRole, demoRoster, identifyAs,
     loading, loadError,
     projects, addProject, toggleProjectActive,
+    mainProjects, addMainProject, setProjectMainProject,
     budgets, createBudget, addBudgetLineItem, updateBudgetGroup, adjustBudgetAllocation, budgetAvailable,
     travelRequests, submitTravelRequest, hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
     ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,

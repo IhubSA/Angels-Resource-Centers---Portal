@@ -18,6 +18,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 export const TABLES = {
   users: 'npo_portal_users',
   projects: 'npo_portal_projects',
+  mainProjects: 'npo_portal_main_projects',
   budgets: 'npo_portal_budgets',
   travelRequests: 'npo_portal_travel_requests',
   travelExpenses: 'npo_portal_travel_expenses',

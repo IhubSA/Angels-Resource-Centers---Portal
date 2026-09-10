@@ -7,9 +7,38 @@ import { useApp } from '../../context/AppContext';
 import { money, pct } from '../../utils/format';
 
 const BLANK_LINE_ITEM = { name: '', allocated: '' };
+const NEW_MAIN_PROJECT = '__new__';
+
+// Toggle-able tag list for picking one or more Cost Codes (Projects) under a Budget — a
+// Budget can draw against more than one Cost Code at once, e.g. a programme spanning two
+// funding-year codes (added 2026-09-10, replacing the old single "Project" dropdown).
+function CostCodePicker({ options, selectedIds, onToggle }) {
+  if (options.length === 0) {
+    return <p className="hint" style={{ margin: '4px 0 0' }}>No Projects to choose from yet — add some under Projects first.</p>;
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+      {options.map((p) => {
+        const active = selectedIds.includes(p.id);
+        return (
+          <button
+            type="button"
+            key={p.id}
+            onClick={() => onToggle(p.id)}
+            className={active ? 'badge badge-blue' : 'badge badge-slate'}
+            style={{ cursor: 'pointer', border: active ? '1px solid var(--blue)' : '1px solid var(--border)' }}
+            title={p.code || p.name}
+          >
+            {p.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function BudgetsPanel() {
-  const { budgets, projects, createBudget, addBudgetLineItem, updateBudgetGroup, adjustBudgetAllocation, can, currentUser, scope } = useApp();
+  const { budgets, projects, mainProjects, addMainProject, createBudget, addBudgetLineItem, updateBudgetGroup, adjustBudgetAllocation, can, currentUser, scope } = useApp();
   const financeScope = scope('finance');
   const scoped = financeScope === 'own' || financeScope === 'department'
     ? budgets.filter((b) => b.department === currentUser.department)
@@ -25,7 +54,8 @@ export default function BudgetsPanel() {
     return Array.from(byGroup.values()).map((items) => ({
       groupId: items[0].groupId,
       groupName: items[0].groupName,
-      projectId: items[0].projectId,
+      mainProjectId: items[0].mainProjectId,
+      costCodeIds: items[0].costCodeIds && items[0].costCodeIds.length > 0 ? items[0].costCodeIds : (items[0].projectId ? [items[0].projectId] : []),
       department: items[0].department,
       owner: items[0].owner,
       items,
@@ -36,7 +66,9 @@ export default function BudgetsPanel() {
   }, [scoped]);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ groupName: '', projectId: '', department: '', owner: currentUser.name });
+  const [createForm, setCreateForm] = useState({ groupName: '', mainProjectId: '', costCodeIds: [], department: '', owner: currentUser.name });
+  const [nameAutoFilled, setNameAutoFilled] = useState(true);
+  const [newMainProjectName, setNewMainProjectName] = useState('');
   const [lineItems, setLineItems] = useState([{ ...BLANK_LINE_ITEM }]);
 
   const [editing, setEditing] = useState(null); // a single line item {id, name, allocated, committed, spent}
@@ -46,7 +78,30 @@ export default function BudgetsPanel() {
   const [newItem, setNewItem] = useState({ ...BLANK_LINE_ITEM });
 
   const [editingGroup, setEditingGroup] = useState(null); // group object
-  const [groupForm, setGroupForm] = useState({ projectId: '', department: '', owner: '' });
+  const [groupForm, setGroupForm] = useState({ mainProjectId: '', costCodeIds: [], department: '', owner: '' });
+  const [editNewMainProjectName, setEditNewMainProjectName] = useState('');
+
+  // Cost Code choices narrow to the selected Main Project's Projects once one is picked;
+  // otherwise every active Project is offered (matches the old "no project link" flexibility).
+  const costCodeOptionsFor = (mainProjectId) => (mainProjectId ? activeProjects.filter((p) => p.mainProjectId === mainProjectId) : activeProjects);
+
+  function handleMainProjectChange(value) {
+    if (value === NEW_MAIN_PROJECT) {
+      setCreateForm((f) => ({ ...f, mainProjectId: NEW_MAIN_PROJECT, costCodeIds: [] }));
+      return;
+    }
+    const mp = mainProjects.find((m) => m.id === value);
+    setCreateForm((f) => ({
+      ...f,
+      mainProjectId: value,
+      costCodeIds: [],
+      groupName: nameAutoFilled ? (mp?.name || '') : f.groupName,
+    }));
+  }
+
+  function toggleCostCode(id) {
+    setCreateForm((f) => ({ ...f, costCodeIds: f.costCodeIds.includes(id) ? f.costCodeIds.filter((x) => x !== id) : [...f.costCodeIds, id] }));
+  }
 
   function updateLineItem(i, field, value) {
     setLineItems((prev) => prev.map((li, idx) => (idx === i ? { ...li, [field]: value } : li)));
@@ -55,17 +110,25 @@ export default function BudgetsPanel() {
   function removeLineItemRow(i) { setLineItems((prev) => prev.filter((_, idx) => idx !== i)); }
 
   const lineItemsTotal = lineItems.reduce((s, li) => s + (Number(li.allocated) || 0), 0);
-  const canCreate = createForm.groupName && lineItems.length > 0 && lineItems.every((li) => li.name && li.allocated !== '');
+  const canCreate = createForm.groupName && lineItems.length > 0 && lineItems.every((li) => li.name && li.allocated !== '')
+    && (createForm.mainProjectId !== NEW_MAIN_PROJECT || newMainProjectName.trim());
 
   function submitCreate(e) {
     e.preventDefault();
     if (!canCreate) return;
+    let mainProjectId = createForm.mainProjectId;
+    if (mainProjectId === NEW_MAIN_PROJECT) {
+      if (!newMainProjectName.trim()) return;
+      mainProjectId = addMainProject(newMainProjectName.trim()).id;
+    }
     createBudget({
-      groupName: createForm.groupName, projectId: createForm.projectId,
+      groupName: createForm.groupName, mainProjectId, costCodeIds: createForm.costCodeIds,
       department: createForm.department || currentUser.department, owner: createForm.owner, fiscalYear: 'FY2026',
       lineItems: lineItems.map((li) => ({ name: li.name, allocated: Number(li.allocated) })),
     });
-    setCreateForm({ groupName: '', projectId: '', department: '', owner: currentUser.name });
+    setCreateForm({ groupName: '', mainProjectId: '', costCodeIds: [], department: '', owner: currentUser.name });
+    setNewMainProjectName('');
+    setNameAutoFilled(true);
     setLineItems([{ ...BLANK_LINE_ITEM }]);
     setShowCreate(false);
   }
@@ -80,11 +143,23 @@ export default function BudgetsPanel() {
 
   function openEditGroup(group) {
     setEditingGroup(group);
-    setGroupForm({ projectId: group.projectId || '', department: group.department || '', owner: group.owner || '' });
+    setGroupForm({ mainProjectId: group.mainProjectId || '', costCodeIds: group.costCodeIds || [], department: group.department || '', owner: group.owner || '' });
+    setEditNewMainProjectName('');
+  }
+  function handleGroupMainProjectChange(value) {
+    setGroupForm((f) => ({ ...f, mainProjectId: value, costCodeIds: [] }));
+  }
+  function toggleGroupCostCode(id) {
+    setGroupForm((f) => ({ ...f, costCodeIds: f.costCodeIds.includes(id) ? f.costCodeIds.filter((x) => x !== id) : [...f.costCodeIds, id] }));
   }
   function submitEditGroup(e) {
     e.preventDefault();
-    updateBudgetGroup(editingGroup.groupId, groupForm);
+    let mainProjectId = groupForm.mainProjectId;
+    if (mainProjectId === NEW_MAIN_PROJECT) {
+      if (!editNewMainProjectName.trim()) return;
+      mainProjectId = addMainProject(editNewMainProjectName.trim()).id;
+    }
+    updateBudgetGroup(editingGroup.groupId, { ...groupForm, mainProjectId });
     setEditingGroup(null);
   }
 
@@ -98,7 +173,8 @@ export default function BudgetsPanel() {
       {groups.length === 0 ? (
         <div className="card"><EmptyState icon={Wallet} title="No budgets yet" /></div>
       ) : groups.map((group) => {
-        const project = projects.find((p) => p.id === group.projectId);
+        const mainProject = mainProjects.find((mp) => mp.id === group.mainProjectId);
+        const costCodeNames = group.costCodeIds.map((id) => projects.find((p) => p.id === id)?.name).filter(Boolean);
         const available = group.allocated - group.committed - group.spent;
         return (
           <div className="card" key={group.groupId} style={{ marginBottom: 14 }}>
@@ -106,7 +182,9 @@ export default function BudgetsPanel() {
               <div>
                 <h3 style={{ marginBottom: 2 }}>{group.groupName}</h3>
                 <div className="cell-muted" style={{ fontSize: 11.5 }}>
-                  {project ? project.name : 'No project linked'} · {group.department} · {group.owner}
+                  {mainProject ? mainProject.name : 'No Main Project'}
+                  {costCodeNames.length > 0 && ` — ${costCodeNames.join(', ')}`}
+                  {' · '}{group.department} · {group.owner}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -162,17 +240,33 @@ export default function BudgetsPanel() {
         <><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button><button className="btn btn-primary" form="create-budget-form" type="submit" disabled={!canCreate}>Create</button></>
       }>
         <form id="create-budget-form" onSubmit={submitCreate}>
-          <div className="field"><label>Budget Name *</label><input className="input" value={createForm.groupName} onChange={(e) => setCreateForm((f) => ({ ...f, groupName: e.target.value }))} placeholder="e.g. Programs Travel & Field Visits FY2026" /></div>
-          <div className="field-row">
-            <div className="field"><label>Project</label>
-              <select className="input" value={createForm.projectId} onChange={(e) => setCreateForm((f) => ({ ...f, projectId: e.target.value }))}>
-                <option value="">No project link</option>
-                {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div className="field"><label>Department</label><input className="input" value={createForm.department} onChange={(e) => setCreateForm((f) => ({ ...f, department: e.target.value }))} placeholder={currentUser.department} /></div>
+          <div className="field">
+            <label>Main Project (client / programme)</label>
+            <select className="input" value={createForm.mainProjectId} onChange={(e) => handleMainProjectChange(e.target.value)}>
+              <option value="">No Main Project</option>
+              {mainProjects.map((mp) => <option key={mp.id} value={mp.id}>{mp.name}</option>)}
+              <option value={NEW_MAIN_PROJECT}>+ New Main Project…</option>
+            </select>
+            {createForm.mainProjectId === NEW_MAIN_PROJECT && (
+              <input className="input" style={{ marginTop: 8 }} value={newMainProjectName} onChange={(e) => {
+                setNewMainProjectName(e.target.value);
+                if (nameAutoFilled) setCreateForm((f) => ({ ...f, groupName: e.target.value }));
+              }} placeholder="e.g. Anthem" />
+            )}
           </div>
-          <div className="field"><label>Owner</label><input className="input" value={createForm.owner} onChange={(e) => setCreateForm((f) => ({ ...f, owner: e.target.value }))} /></div>
+          <div className="field">
+            <label>Budget Name *</label>
+            <input className="input" value={createForm.groupName} onChange={(e) => { setNameAutoFilled(false); setCreateForm((f) => ({ ...f, groupName: e.target.value })); }} placeholder="e.g. Programs Travel & Field Visits FY2026" />
+            <p className="hint" style={{ margin: '4px 0 0' }}>Defaults to the Main Project's name — edit freely if you want something different (e.g. add a fiscal year).</p>
+          </div>
+          <div className="field">
+            <label>Cost Code(s) — which Project(s) this budget is allocated against</label>
+            <CostCodePicker options={costCodeOptionsFor(createForm.mainProjectId === NEW_MAIN_PROJECT ? '' : createForm.mainProjectId)} selectedIds={createForm.costCodeIds} onToggle={toggleCostCode} />
+          </div>
+          <div className="field-row">
+            <div className="field"><label>Department</label><input className="input" value={createForm.department} onChange={(e) => setCreateForm((f) => ({ ...f, department: e.target.value }))} placeholder={currentUser.department} /></div>
+            <div className="field"><label>Owner</label><input className="input" value={createForm.owner} onChange={(e) => setCreateForm((f) => ({ ...f, owner: e.target.value }))} /></div>
+          </div>
 
           <div className="field">
             <label>Line Items * — name your own (e.g. Travel, Training, Meetings)</label>
@@ -210,11 +304,20 @@ export default function BudgetsPanel() {
         <><button className="btn btn-secondary" onClick={() => setEditingGroup(null)}>Cancel</button><button className="btn btn-primary" form="edit-group-form" type="submit">Save</button></>
       }>
         <form id="edit-group-form" onSubmit={submitEditGroup}>
-          <div className="field"><label>Project</label>
-            <select className="input" value={groupForm.projectId} onChange={(e) => setGroupForm((f) => ({ ...f, projectId: e.target.value }))}>
-              <option value="">No project link</option>
-              {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <div className="field">
+            <label>Main Project (client / programme)</label>
+            <select className="input" value={groupForm.mainProjectId} onChange={(e) => handleGroupMainProjectChange(e.target.value)}>
+              <option value="">No Main Project</option>
+              {mainProjects.map((mp) => <option key={mp.id} value={mp.id}>{mp.name}</option>)}
+              <option value={NEW_MAIN_PROJECT}>+ New Main Project…</option>
             </select>
+            {groupForm.mainProjectId === NEW_MAIN_PROJECT && (
+              <input className="input" style={{ marginTop: 8 }} value={editNewMainProjectName} onChange={(e) => setEditNewMainProjectName(e.target.value)} placeholder="e.g. Anthem" />
+            )}
+          </div>
+          <div className="field">
+            <label>Cost Code(s) — which Project(s) this budget is allocated against</label>
+            <CostCodePicker options={costCodeOptionsFor(groupForm.mainProjectId === NEW_MAIN_PROJECT ? '' : groupForm.mainProjectId)} selectedIds={groupForm.costCodeIds} onToggle={toggleGroupCostCode} />
           </div>
           <div className="field-row">
             <div className="field"><label>Department</label><input className="input" value={groupForm.department} onChange={(e) => setGroupForm((f) => ({ ...f, department: e.target.value }))} /></div>

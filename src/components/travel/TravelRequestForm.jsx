@@ -112,11 +112,16 @@ export default function TravelRequestForm({ open, onClose }) {
   const { submitTravelRequest, budgets, projects, currentUser } = useApp();
   const activeProjects = projects.filter((p) => p.active);
 
-  // Budget Line choices narrow to whichever Project is selected (falling back to every budget
-  // line when nothing in the system is linked to that project yet), per Brent's choice to link
-  // Budgets to Projects (2026-09-10).
+  // Budget Line choices narrow to whichever Project (Cost Code) is selected (falling back to
+  // every budget line when nothing in the system is linked to that project yet), per Brent's
+  // choice to link Budgets to Projects (2026-09-10) — a Budget can list several Cost Codes
+  // (costCodeIds) since 2026-09-10's Main Project rework, so check that array as well as the
+  // older single-project link (projectId) that pre-2026-09-10 budgets still carry.
+  function isBudgetLinkedToProject(b, projectId) {
+    return (b.costCodeIds && b.costCodeIds.includes(projectId)) || b.projectId === projectId;
+  }
   function budgetsForProject(projectId) {
-    const linked = budgets.filter((b) => b.projectId === projectId);
+    const linked = budgets.filter((b) => isBudgetLinkedToProject(b, projectId));
     return linked.length > 0 ? linked : budgets;
   }
 
@@ -256,7 +261,7 @@ export default function TravelRequestForm({ open, onClose }) {
             <select className="input" value={trip.budgetId} onChange={(e) => updateTrip('budgetId', e.target.value)}>
               {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.groupName} — {b.name}</option>)}
             </select>
-            {budgetChoices.length > 0 && budgetChoices[0].projectId !== trip.projectId && (
+            {budgetChoices.length > 0 && !budgetChoices.some((b) => isBudgetLinkedToProject(b, trip.projectId)) && (
               <p className="hint">No budgets are linked to this project yet — showing every budget line.</p>
             )}
           </div>

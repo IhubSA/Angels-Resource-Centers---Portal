@@ -31,7 +31,18 @@ export function mapProject(row) {
     // CODE-002, ...) — incremented atomically in the DB via the npo_portal_next_request_seq()
     // function each time a request is submitted against this project (added 2026-09-10).
     requestSeq: row.request_seq || 0,
+    // Which client/programme "Main Project" this Project (now effectively a Cost Code) sits
+    // under, e.g. several "Anthem - <Site> - Internship" Projects all share one Main Project,
+    // "Anthem" — added 2026-09-10 per Brent's request. Blank for Projects not yet grouped.
+    mainProjectId: row.main_project_id || '',
   };
+}
+
+// A "Main Project" is the client/programme umbrella (e.g. "Anthem", "ENGIE", "SCATEC") that
+// several individual Projects/Cost Codes sit under — added 2026-09-10 so Budgets can be named
+// and organized at the client level while still tracking spend against specific Cost Codes.
+export function mapMainProject(row) {
+  return { id: row.id, name: row.name, createdDate: row.created_date };
 }
 
 export function mapBudget(row) {
@@ -45,7 +56,14 @@ export function mapBudget(row) {
     // unchanged; groupId/groupName tie a budget's line items together for display (added 2026-09-10).
     groupId: row.group_id || row.id,
     groupName: row.group_name || row.name,
+    // Legacy single-Project link, kept for budgets created before 2026-09-10's Main
+    // Project/Cost Code rework — new budgets use mainProjectId + costCodeIds instead.
     projectId: row.project_id || '',
+    // Main Project (client/programme, e.g. "Anthem") and the specific Cost Code(s) (individual
+    // Projects, e.g. "Anthem - Amstilite - Internship") this budget draws against — a budget can
+    // span more than one Cost Code, e.g. a programme spanning two funding-year codes (2026-09-10).
+    mainProjectId: row.main_project_id || '',
+    costCodeIds: Array.isArray(row.cost_code_ids) ? row.cost_code_ids : [],
     fiscalYear: row.fiscal_year,
     department: row.department,
     owner: row.owner,
