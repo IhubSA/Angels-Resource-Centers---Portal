@@ -9,13 +9,13 @@ import { initialsOf } from '../../utils/format';
 export default function UserManagement() {
   const { users, addUser, updateUserRole, toggleUserActive } = useApp();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', role: ROLES.STAFF, department: '', title: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', role: ROLES.STAFF, department: '', title: '' });
 
   function submit(e) {
     e.preventDefault();
     if (!form.name || !form.email) return;
     addUser(form);
-    setForm({ name: '', email: '', role: ROLES.STAFF, department: '', title: '' });
+    setForm({ name: '', email: '', phone: '', role: ROLES.STAFF, department: '', title: '' });
     setShowForm(false);
   }
 
@@ -41,7 +41,7 @@ export default function UserManagement() {
                       <div className="avatar">{u.initials || initialsOf(u.name)}</div>
                       <div>
                         <div style={{ fontWeight: 650 }}>{u.name}</div>
-                        <div className="cell-muted" style={{ fontSize: 11.5 }}>{u.email}</div>
+                        <div className="cell-muted" style={{ fontSize: 11.5 }}>{u.email}{u.phone ? ` · ${u.phone}` : ''}</div>
                       </div>
                     </div>
                   </td>
@@ -70,11 +70,15 @@ export default function UserManagement() {
       }>
         <form id="user-form" onSubmit={submit}>
           <div className="field"><label>Full Name *</label><input className="input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
-          <div className="field"><label>Email *</label><input type="email" className="input" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
+          <div className="field-row">
+            <div className="field"><label>Email *</label><input type="email" className="input" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
+            <div className="field"><label>Phone</label><input type="tel" className="input" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="e.g. 082 123 4567" /></div>
+          </div>
           <div className="field-row">
             <div className="field"><label>Department</label><input className="input" value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} /></div>
             <div className="field"><label>Title</label><input className="input" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} /></div>
           </div>
+          <p className="hint">Phone number is shown to whoever picks this person as a Traveler on a Travel Request, so it's worth keeping current.</p>
           <div className="field">
             <label>Role</label>
             <select className="input" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>

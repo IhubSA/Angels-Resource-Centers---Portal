@@ -1,4 +1,4 @@
-import { LayoutDashboard, Plane, Wallet, FileStack, ShieldCheck, Users, KeyRound, ChevronsLeft, ChevronsRight, Heart } from 'lucide-react';
+import { LayoutDashboard, Plane, Wallet, FileStack, ShieldCheck, Users, FolderKanban, KeyRound, ChevronsLeft, ChevronsRight, Heart } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function Sidebar({ view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
@@ -16,6 +16,7 @@ export default function Sidebar({ view, setView, collapsed, setCollapsed, mobile
   const adminItems = [
     { key: 'audit', label: 'Audit Log', icon: ShieldCheck, show: can('audit', 'view') },
     { key: 'users', label: 'User Management', icon: Users, show: can('admin', 'manageUsers') },
+    { key: 'projects', label: 'Projects', icon: FolderKanban, show: can('admin', 'manageUsers') },
     { key: 'permissions', label: 'Permissions', icon: KeyRound, show: can('admin', 'managePermissions') },
   ].filter((i) => i.show);
 

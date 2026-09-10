@@ -8,6 +8,7 @@ import FinanceModule from './components/finance/FinanceModule';
 import DocumentsModule from './components/documents/DocumentsModule';
 import AuditLogViewer from './components/audit/AuditLogViewer';
 import UserManagement from './components/admin/UserManagement';
+import ProjectManagement from './components/admin/ProjectManagement';
 import PermissionsManager from './components/admin/PermissionsManager';
 import { useApp } from './context/AppContext';
 import { ShieldAlert, Heart, AlertCircle } from 'lucide-react';
@@ -37,6 +38,9 @@ export default function App() {
       case 'users':
         if (!can('admin', 'manageUsers')) return <AccessDenied />;
         return <UserManagement />;
+      case 'projects':
+        if (!can('admin', 'manageUsers')) return <AccessDenied />;
+        return <ProjectManagement />;
       case 'permissions':
         if (!can('admin', 'managePermissions')) return <AccessDenied />;
         return <PermissionsManager />;

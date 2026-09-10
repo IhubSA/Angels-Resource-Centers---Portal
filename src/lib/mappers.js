@@ -10,11 +10,23 @@ export function mapUser(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    phone: row.phone || '',
     role: row.role,
     department: row.department,
     title: row.title,
     active: row.active,
     initials: row.initials,
+  };
+}
+
+export function mapProject(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.code || '',
+    department: row.department || '',
+    active: row.active,
+    createdDate: row.created_date,
   };
 }
 
@@ -62,6 +74,17 @@ export function mapTravelRequest(row, expenseRows = []) {
     budgetId: row.budget_id,
     status: row.status,
     createdDate: row.created_date,
+    // Rebuilt 2026-09-10 intake fields: multiple travelers (booking on behalf of colleagues),
+    // a Project allocation (separate from the Budget Line used for financial tracking), and a
+    // multi-leg itinerary — see src/components/travel/TravelRequestForm.jsx.
+    travelers: row.travelers || [],
+    noOfTravelers: row.no_of_travelers || (row.travelers || []).length || 1,
+    projectId: row.project_id || '',
+    businessActivity: row.business_activity || '',
+    travelJustification: row.travel_justification || '',
+    sntAdvanceRequired: !!row.sant_advance_required,
+    multiItinerary: !!row.multi_itinerary,
+    itinerary: row.itinerary || [],
     // Six-stage approval chain (ATMS-FRM-001): HOD -> Travel Office (quality) -> Bookkeeper (booking)
     // -> Finance Manager (budget/policy) -> CEO -> Board Treasurer (conditional, high-value only).
     hod: row.hod || { approverId: null, approverName: '', status: 'pending', date: null, comment: '' },

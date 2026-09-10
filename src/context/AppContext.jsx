@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ROLES, canWith, viewScopeWith, DEFAULT_PERMISSIONS, BOARD_TREASURER_THRESHOLD } from '../data/permissions';
 import { supabase, TABLES } from '../lib/supabaseClient';
-import { mapUser, mapBudget, mapTravelRequest, mapFinanceRequest, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
+import { mapUser, mapProject, mapBudget, mapTravelRequest, mapFinanceRequest, mapDocument, mapAuditLog, mapRolePermission } from '../lib/mappers';
 
 const AppContext = createContext(null);
 
@@ -27,6 +27,7 @@ const DEMO_ROLE_ORDER = [
 export function AppProvider({ children }) {
   const [currentUserId, setCurrentUserId] = useState('u1');
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [travelRequests, setTravelRequests] = useState([]);
   const [financeRequests, setFinanceRequests] = useState([]);
@@ -56,8 +57,9 @@ export function AppProvider({ children }) {
       setLoading(true);
       setLoadError(null);
       try {
-        const [usersRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
+        const [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes] = await Promise.all([
           supabase.from(TABLES.users).select('*').order('id'),
+          supabase.from(TABLES.projects).select('*').order('name'),
           supabase.from(TABLES.budgets).select('*').order('id'),
           supabase.from(TABLES.travelRequests).select('*').order('created_date', { ascending: false }),
           supabase.from(TABLES.travelExpenses).select('*'),
@@ -67,11 +69,12 @@ export function AppProvider({ children }) {
           supabase.from(TABLES.auditLog).select('*').order('ts', { ascending: false }),
           supabase.from(TABLES.rolePermissions).select('*'),
         ]);
-        const firstError = [usersRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes]
+        const firstError = [usersRes, projectsRes, budgetsRes, travelRes, expensesRes, financeRes, docsRes, versionsRes, auditRes, permsRes]
           .map((r) => r.error).find(Boolean);
         if (firstError) throw firstError;
         if (cancelled) return;
         setUsers(usersRes.data.map(mapUser));
+        setProjects(projectsRes.data.map(mapProject));
         setBudgets(budgetsRes.data.map(mapBudget));
         setTravelRequests(travelRes.data.map((r) => mapTravelRequest(r, expensesRes.data)));
         setFinanceRequests(financeRes.data.map(mapFinanceRequest));
@@ -147,13 +150,43 @@ export function AppProvider({ children }) {
 
   const budgetAvailable = useCallback((b) => b.allocated - b.committed - b.spent, []);
 
+  // ---------- Admin: Projects ----------
+  // A standalone list, independent of Budget Lines — the traveler picks a Project (which
+  // programme/initiative the trip supports) AND separately a Budget Line (which pot of money
+  // pays for it), per Brent's choice on 2026-09-10.
+  const addProject = useCallback((data) => {
+    const p = { id: nextId('PRJ'), active: true, createdDate: today(), ...data };
+    setProjects((prev) => [...prev, p]);
+    log('Created project', 'Admin', p.id, p.name);
+    showToast('Project created');
+    persistInsert(TABLES.projects, {
+      id: p.id, name: p.name, code: p.code || '', department: p.department || '', active: p.active, created_date: p.createdDate,
+    }, 'project');
+  }, [log, showToast, persistInsert]);
+
+  const toggleProjectActive = useCallback((id) => {
+    const p = projects.find((x) => x.id === id);
+    const newActive = !p?.active;
+    setProjects((prev) => prev.map((x) => (x.id === id ? { ...x, active: newActive } : x)));
+    log(p?.active ? 'Deactivated project' : 'Activated project', 'Admin', id, p?.name || id);
+    showToast(p?.active ? 'Project deactivated' : 'Project activated');
+    persistUpdate(TABLES.projects, id, { active: newActive }, 'project status');
+  }, [projects, log, showToast, persistUpdate]);
+
   // ---------- Travel Management ----------
   // Six-stage approval chain per ATMS-FRM-001: HOD -> Travel Office (quality) -> Bookkeeper (booking)
   // -> Finance Manager (budget/policy, after booking) -> CEO -> Board Treasurer (conditional, > R50,000).
   // Then post-travel: Travel Office (receipt check) -> Finance Manager (record & pay).
+  // Rebuilt 2026-09-10: one trip = one approval chain, even when it covers several itinerary
+  // legs (Air/Road/Air & Road/Accommodation) and/or several travelers booked on their behalf
+  // by the requester. `data.itinerary` is the full array of legs already assembled client-side
+  // by TravelRequestForm; `destination`/`startDate`/`endDate` here are derived from the first
+  // leg purely so the rest of the app (search, dashboard, reports) keeps working unchanged.
   const submitTravelRequest = useCallback((data) => {
     const hodUser = users.find((u) => u.role === ROLES.OPERATIONAL_HOD && u.department === currentUser.department)
       || users.find((u) => u.role === ROLES.OPERATIONAL_HOD);
+    const firstLeg = data.itinerary?.[0] || {};
+    const lastLeg = data.itinerary?.[data.itinerary.length - 1] || firstLeg;
     const tr = {
       id: nextId('TR'),
       requesterId: currentUser.id,
@@ -161,6 +194,12 @@ export function AppProvider({ children }) {
       department: currentUser.department,
       createdDate: today(),
       status: 'pending_hod',
+      destination: data.itinerary && data.itinerary.length > 1
+        ? `${firstLeg.destination} +${data.itinerary.length - 1} more`
+        : (firstLeg.destination || ''),
+      startDate: firstLeg.departDateTime || '',
+      endDate: (lastLeg.roundTrip && lastLeg.returnDateTime) ? lastLeg.returnDateTime : (lastLeg.departDateTime || firstLeg.departDateTime || ''),
+      purpose: data.businessActivity || '',
       hod: { approverId: null, approverName: hodUser?.name || 'Operational/HOD', status: 'pending', date: null, comment: '' },
       travelOffice: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
       booking: { confirmed: false, bookedBy: null, bookedByName: '', bookingRef: null, bookedDate: null, actualCost: null },
@@ -170,18 +209,29 @@ export function AppProvider({ children }) {
       receiptCheck: { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
       expenses: [],
       reimbursement: { status: 'not_applicable', amount: 0, processedDate: null, processedBy: null },
+      travelers: [],
+      noOfTravelers: 1,
+      projectId: '',
+      businessActivity: '',
+      travelJustification: '',
+      sntAdvanceRequired: false,
+      multiItinerary: false,
+      itinerary: [],
       ...data,
     };
 
     setTravelRequests((prev) => [tr, ...prev]);
-    log('Submitted travel request', 'Travel', tr.id, `${data.destination} — links only, estimated R${data.estimatedCost.toLocaleString()}`);
-    notify({ role: ROLES.OPERATIONAL_HOD, title: 'Travel request awaiting HOD review', message: `${tr.requesterName} — ${data.destination}`, module: 'Travel', targetId: tr.id });
+    log('Submitted travel request', 'Travel', tr.id, `${tr.destination} — ${tr.itinerary.length} leg${tr.itinerary.length === 1 ? '' : 's'}, estimated R${data.estimatedCost.toLocaleString()}`);
+    notify({ role: ROLES.OPERATIONAL_HOD, title: 'Travel request awaiting HOD review', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: tr.id });
     showToast('Travel request submitted');
 
     persistInsert(TABLES.travelRequests, {
       id: tr.id, requester_id: tr.requesterId, requester_name: tr.requesterName, department: tr.department,
-      destination: tr.destination, purpose: tr.purpose, start_date: tr.startDate, end_date: tr.endDate,
+      destination: tr.destination, purpose: tr.purpose, start_date: tr.startDate || null, end_date: tr.endDate || null,
       estimated_cost: tr.estimatedCost, budget_id: tr.budgetId, status: tr.status, created_date: tr.createdDate,
+      travelers: tr.travelers, no_of_travelers: tr.noOfTravelers, project_id: tr.projectId || null,
+      business_activity: tr.businessActivity, travel_justification: tr.travelJustification,
+      sant_advance_required: tr.sntAdvanceRequired, multi_itinerary: tr.multiItinerary, itinerary: tr.itinerary,
       hod: tr.hod, travel_office: tr.travelOffice, booking: tr.booking, finance_review: tr.financeReview,
       ceo: tr.ceo, board_treasurer: tr.boardTreasurer, receipt_check: tr.receiptCheck, reimbursement: tr.reimbursement,
     }, 'travel request');
@@ -730,7 +780,7 @@ export function AppProvider({ children }) {
     log('Created user account', 'Admin', u.id, `${u.name} — ${u.role}`);
     showToast('User created');
     persistInsert(TABLES.users, {
-      id: u.id, name: u.name, email: u.email, role: u.role, department: u.department, title: u.title, active: u.active, initials: u.initials,
+      id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, department: u.department, title: u.title, active: u.active, initials: u.initials,
     }, 'user account');
   }, [log, showToast, persistInsert]);
 
@@ -888,6 +938,7 @@ export function AppProvider({ children }) {
   const value = {
     currentUser, role, users, switchRole, demoRoster,
     loading, loadError,
+    projects, addProject, toggleProjectActive,
     budgets, createBudget, adjustBudgetAllocation, budgetAvailable,
     travelRequests, submitTravelRequest, hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
     ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,
