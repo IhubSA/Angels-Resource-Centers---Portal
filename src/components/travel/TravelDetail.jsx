@@ -60,7 +60,7 @@ export default function TravelDetail({ requestId, onClose }) {
   const clearComment = () => setComment('');
 
   return (
-    <Modal open onClose={onClose} size="lg" title={`${tr.id} — ${tr.destination}`} subtitle={`Submitted by ${tr.requesterName} on ${formatDate(tr.createdDate)}`}>
+    <Modal open onClose={onClose} size="lg" title={tr.requestNumber ? `${tr.requestNumber} — ${tr.destination}` : `${tr.id} — ${tr.destination}`} subtitle={`Submitted by ${tr.requesterName} on ${formatDate(tr.createdDate)}`}>
       <div className="grid grid-2" style={{ alignItems: 'start', gap: 20 }}>
         <div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
@@ -75,6 +75,7 @@ export default function TravelDetail({ requestId, onClose }) {
             <div className="kv-row"><span className="k">Dates</span><span className="v">{formatDate(tr.startDate)} – {formatDate(tr.endDate)}</span></div>
             <div className="kv-row"><span className="k">Department</span><span className="v">{tr.department}</span></div>
             <div className="kv-row"><span className="k">Project</span><span className="v">{project?.name || tr.projectId || '—'}</span></div>
+            <div className="kv-row"><span className="k">Request Number</span><span className="v">{tr.requestNumber || '—'}</span></div>
             <div className="kv-row"><span className="k">Estimated Cost</span><span className="v">{money(tr.estimatedCost)}</span></div>
             {tr.booking.actualCost != null && <div className="kv-row"><span className="k">Actual (booked) Cost</span><span className="v">{money(tr.booking.actualCost)}</span></div>}
             <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget ? `${budget.groupName} — ${budget.name}` : tr.budgetId}</span></div>
@@ -104,6 +105,7 @@ export default function TravelDetail({ requestId, onClose }) {
                       <div className="kv-row"><span className="k">Departs</span><span className="v">{formatDateTime(leg.departDateTime)}</span></div>
                       {leg.roundTrip && <div className="kv-row"><span className="k">Returns</span><span className="v">{formatDateTime(leg.returnDateTime)}</span></div>}
                       <div className="kv-row"><span className="k">Rental Car</span><span className="v">{RENTAL_CAR_LABELS[leg.rentalCar] || 'Not required'}</span></div>
+                      {leg.rentalCar === 'O' && leg.oClassReason && <div className="kv-row"><span className="k">Reason for O Class</span><span className="v">{leg.oClassReason}</span></div>}
                       {leg.secondDriverRequired && leg.secondDriverName && <div className="kv-row"><span className="k">Second Driver</span><span className="v">{leg.secondDriverName}</span></div>}
                       {leg.accommodationRequired && <div className="kv-row"><span className="k">Accommodation</span><span className="v">{leg.accommodationDetails || 'Required — details not specified'}</span></div>}
                     </div>

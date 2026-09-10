@@ -27,6 +27,10 @@ export function mapProject(row) {
     department: row.department || '',
     active: row.active,
     createdDate: row.created_date,
+    // Running counter behind the per-project Travel Request Number (e.g. CODE-001,
+    // CODE-002, ...) — incremented atomically in the DB via the npo_portal_next_request_seq()
+    // function each time a request is submitted against this project (added 2026-09-10).
+    requestSeq: row.request_seq || 0,
   };
 }
 
@@ -81,6 +85,10 @@ export function mapTravelRequest(row, expenseRows = []) {
     budgetId: row.budget_id,
     status: row.status,
     createdDate: row.created_date,
+    // Per-project sequential reference (e.g. ANT_INT_AMS_PAR_TVT-001) — assigned once at
+    // submission via the DB's atomic per-project counter; blank for requests submitted
+    // before this existed, or with no Project selected (added 2026-09-10).
+    requestNumber: row.request_number || '',
     // Rebuilt 2026-09-10 intake fields: multiple travelers (booking on behalf of colleagues),
     // a Project allocation (separate from the Budget Line used for financial tracking), and a
     // multi-leg itinerary — see src/components/travel/TravelRequestForm.jsx.

@@ -42,7 +42,7 @@ export default function TravelModule() {
 
   const filtered = scoped.filter((tr) => {
     if (statusFilter !== 'all' && tr.status !== statusFilter) return false;
-    if (query && !`${tr.destination} ${tr.requesterName} ${tr.id}`.toLowerCase().includes(query.toLowerCase())) return false;
+    if (query && !`${tr.destination} ${tr.requesterName} ${tr.id} ${tr.requestNumber || ''}`.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
 
@@ -71,7 +71,7 @@ export default function TravelModule() {
       <div className="toolbar">
         <div className="search-box">
           <Search size={14} />
-          <input className="input" placeholder="Search destination, requester, or ID…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="input" placeholder="Search destination, requester, ID, or request #…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
       </div>
 
@@ -83,19 +83,19 @@ export default function TravelModule() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>ID</th><th>Requester</th><th>Destination</th><th>Travelers</th><th>Dates</th><th>Est. Cost</th><th>Status</th><th></th>
+                  <th>ID</th><th>Request #</th><th>Requester</th><th>Destination</th><th>Dates</th><th>Est. Cost</th><th>Status</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((tr) => (
                   <tr key={tr.id}>
                     <td className="cell-mono cell-muted">{tr.id}</td>
+                    <td className="cell-mono">{tr.requestNumber || '—'}</td>
                     <td>{tr.requesterName}</td>
                     <td>
                       <button className="row-link" onClick={() => setSelected(tr.id)}>{tr.destination}</button>
                       {tr.itinerary?.length > 1 && <span className="cell-muted" style={{ fontSize: 11 }}> · {tr.itinerary.length} legs</span>}
                     </td>
-                    <td className="cell-muted">{tr.noOfTravelers || tr.travelers?.length || 1}</td>
                     <td className="cell-muted">{formatDate(tr.startDate)} – {formatDate(tr.endDate)}</td>
                     <td className="cell-mono">{money(tr.estimatedCost)}</td>
                     <td><StatusBadge status={tr.status} /></td>

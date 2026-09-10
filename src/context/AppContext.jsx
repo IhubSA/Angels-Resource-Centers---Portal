@@ -230,13 +230,32 @@ export function AppProvider({ children }) {
   // by the requester. `data.itinerary` is the full array of legs already assembled client-side
   // by TravelRequestForm; `destination`/`startDate`/`endDate` here are derived from the first
   // leg purely so the rest of the app (search, dashboard, reports) keeps working unchanged.
-  const submitTravelRequest = useCallback((data) => {
+  const submitTravelRequest = useCallback(async (data) => {
     const hodUser = users.find((u) => u.role === ROLES.OPERATIONAL_HOD && u.department === currentUser.department)
       || users.find((u) => u.role === ROLES.OPERATIONAL_HOD);
     const firstLeg = data.itinerary?.[0] || {};
     const lastLeg = data.itinerary?.[data.itinerary.length - 1] || firstLeg;
+
+    // Per-project Travel Request Number (e.g. ANT_INT_AMS_PAR_TVT-001), per Brent's request
+    // (2026-09-10): each project keeps its own running counter, incremented atomically in the
+    // DB (npo_portal_next_request_seq) so two people submitting against the same project at
+    // the same moment can never collide on the same number. No Project selected -> no number.
+    let requestNumber = '';
+    if (data.projectId) {
+      const project = projects.find((p) => p.id === data.projectId);
+      const { data: seqResult, error: seqError } = await supabase.rpc('npo_portal_next_request_seq', { p_project_id: data.projectId });
+      if (seqError) {
+        persistError(seqError, 'travel request number');
+      } else if (seqResult != null) {
+        const codePrefix = project?.code || project?.id || data.projectId;
+        requestNumber = `${codePrefix}-${String(seqResult).padStart(3, '0')}`;
+        setProjects((prev) => prev.map((p) => (p.id === data.projectId ? { ...p, requestSeq: seqResult } : p)));
+      }
+    }
+
     const tr = {
       id: nextId('TR'),
+      requestNumber,
       requesterId: currentUser.id,
       requesterName: currentUser.name,
       department: currentUser.department,
@@ -274,7 +293,7 @@ export function AppProvider({ children }) {
     showToast('Travel request submitted');
 
     persistInsert(TABLES.travelRequests, {
-      id: tr.id, requester_id: tr.requesterId, requester_name: tr.requesterName, department: tr.department,
+      id: tr.id, request_number: tr.requestNumber || null, requester_id: tr.requesterId, requester_name: tr.requesterName, department: tr.department,
       destination: tr.destination, purpose: tr.purpose, start_date: tr.startDate || null, end_date: tr.endDate || null,
       estimated_cost: tr.estimatedCost, budget_id: tr.budgetId, status: tr.status, created_date: tr.createdDate,
       travelers: tr.travelers, no_of_travelers: tr.noOfTravelers, project_id: tr.projectId || null,
@@ -284,7 +303,7 @@ export function AppProvider({ children }) {
       ceo: tr.ceo, board_treasurer: tr.boardTreasurer, receipt_check: tr.receiptCheck, reimbursement: tr.reimbursement,
     }, 'travel request');
     return tr.id;
-  }, [currentUser, users, log, notify, showToast, persistInsert]);
+  }, [currentUser, users, projects, log, notify, showToast, persistInsert, persistError]);
 
   // Stage 1 — Operational/HOD: business justification, dates, policy alignment.
   const hodReview = useCallback((id, approve, comment) => {
