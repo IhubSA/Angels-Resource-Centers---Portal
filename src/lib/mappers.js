@@ -35,6 +35,13 @@ export function mapBudget(row) {
     id: row.id,
     name: row.name,
     category: row.category,
+    // A "Budget" is created once (Budget Name, Project, Department, Owner) with one or more
+    // freely-named Line Items (Travel, Training, Meetings, ...) — each line item is still one
+    // row here so all the existing allocated/committed/spent bookkeeping keeps working
+    // unchanged; groupId/groupName tie a budget's line items together for display (added 2026-09-10).
+    groupId: row.group_id || row.id,
+    groupName: row.group_name || row.name,
+    projectId: row.project_id || '',
     fiscalYear: row.fiscal_year,
     department: row.department,
     owner: row.owner,

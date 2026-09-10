@@ -16,11 +16,14 @@ function download(filename, content, type = 'text/csv') {
 }
 
 export default function ReportsPanel() {
-  const { budgets, travelRequests, financeRequests, showToast } = useApp();
+  const { budgets, projects, travelRequests, financeRequests, showToast } = useApp();
 
   function exportBudgetReport() {
-    const rows = budgets.map((b) => ({ id: b.id, name: b.name, category: b.category, department: b.department, allocated: b.allocated, committed: b.committed, spent: b.spent, available: b.allocated - b.committed - b.spent }));
-    download('budget_vs_actual_FY2026.csv', toCsv(rows, ['id', 'name', 'category', 'department', 'allocated', 'committed', 'spent', 'available']));
+    const rows = budgets.map((b) => ({
+      id: b.id, budgetName: b.groupName, lineItem: b.name, project: projects.find((p) => p.id === b.projectId)?.name || '',
+      department: b.department, allocated: b.allocated, committed: b.committed, spent: b.spent, available: b.allocated - b.committed - b.spent,
+    }));
+    download('budget_vs_actual_FY2026.csv', toCsv(rows, ['id', 'budgetName', 'lineItem', 'project', 'department', 'allocated', 'committed', 'spent', 'available']));
     showToast('Budget vs. Actual report exported');
   }
   function exportExpenseReport() {

@@ -102,20 +102,28 @@ function LegFields({ leg, update }) {
 
 export default function TravelRequestForm({ open, onClose }) {
   const { submitTravelRequest, budgets, projects, users, currentUser } = useApp();
-  const travelBudgets = budgets.filter((b) => b.category === 'Travel' || b.department === currentUser.department);
   const activeProjects = projects.filter((p) => p.active);
   const travelerChoices = users.filter((u) => u.active);
+
+  // Budget Line choices narrow to whichever Project is selected (falling back to every budget
+  // line when nothing in the system is linked to that project yet), per Brent's choice to link
+  // Budgets to Projects (2026-09-10).
+  function budgetsForProject(projectId) {
+    const linked = budgets.filter((b) => b.projectId === projectId);
+    return linked.length > 0 ? linked : budgets;
+  }
 
   const [trip, setTrip] = useState({
     travelerIds: [currentUser.id],
     businessActivity: '',
     projectId: activeProjects[0]?.id || '',
-    budgetId: travelBudgets[0]?.id || budgets[0]?.id || '',
+    budgetId: budgetsForProject(activeProjects[0]?.id || '')[0]?.id || '',
     estimatedCost: '',
     travelJustification: '',
     sntAdvanceRequired: false,
     multiItinerary: false,
   });
+  const budgetChoices = useMemo(() => budgetsForProject(trip.projectId), [budgets, trip.projectId]);
   const [legDraft, setLegDraft] = useState({ ...BLANK_LEG });
   const [itinerary, setItinerary] = useState([]);
   const [error, setError] = useState('');
@@ -161,9 +169,10 @@ export default function TravelRequestForm({ open, onClose }) {
   }
 
   function resetAll() {
+    const firstProject = activeProjects[0]?.id || '';
     setTrip({
-      travelerIds: [currentUser.id], businessActivity: '', projectId: activeProjects[0]?.id || '',
-      budgetId: travelBudgets[0]?.id || budgets[0]?.id || '', estimatedCost: '', travelJustification: '',
+      travelerIds: [currentUser.id], businessActivity: '', projectId: firstProject,
+      budgetId: budgetsForProject(firstProject)[0]?.id || '', estimatedCost: '', travelJustification: '',
       sntAdvanceRequired: false, multiItinerary: false,
     });
     setLegDraft({ ...BLANK_LEG });
@@ -248,7 +257,10 @@ export default function TravelRequestForm({ open, onClose }) {
         <div className="field-row">
           <div className="field">
             <label>Project *</label>
-            <select className="input" value={trip.projectId} onChange={(e) => updateTrip('projectId', e.target.value)}>
+            <select className="input" value={trip.projectId} onChange={(e) => {
+              const projectId = e.target.value;
+              setTrip((t) => ({ ...t, projectId, budgetId: budgetsForProject(projectId)[0]?.id || '' }));
+            }}>
               <option value="">Select a project…</option>
               {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -256,8 +268,11 @@ export default function TravelRequestForm({ open, onClose }) {
           <div className="field">
             <label>Budget Line *</label>
             <select className="input" value={trip.budgetId} onChange={(e) => updateTrip('budgetId', e.target.value)}>
-              {budgets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.groupName} — {b.name}</option>)}
             </select>
+            {budgetChoices.length > 0 && budgetChoices[0].projectId !== trip.projectId && (
+              <p className="hint">No budgets are linked to this project yet — showing every budget line.</p>
+            )}
           </div>
         </div>
         <div className="field-row">

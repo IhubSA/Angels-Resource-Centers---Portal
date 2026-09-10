@@ -253,7 +253,7 @@ export default function Dashboard({ setView }) {
               return (
                 <div key={b.id} style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
-                    <strong>{b.name}</strong>
+                    <strong>{b.groupName} — {b.name}</strong>
                     <span className="cell-muted">{money(b.spent)} + {money(b.committed)} committed of {money(b.allocated)}</span>
                   </div>
                   <div className="progress-track">

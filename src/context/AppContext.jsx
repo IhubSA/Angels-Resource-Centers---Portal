@@ -129,16 +129,64 @@ export function AppProvider({ children }) {
   );
 
   // ---------- Budgets ----------
+  // A Budget is created once — name, Project, Department, Owner — with one or more freely-named
+  // Line Items (e.g. Travel, Training, Meetings), each with its own allocated amount. Every line
+  // item is still stored as its own row in npo_portal_budgets (what Travel/Finance Hub requests
+  // pick as their "Budget Line" and commit/spend against), sharing a groupId/groupName so they
+  // display together — this keeps all the existing per-row committed/spent bookkeeping untouched.
   const createBudget = useCallback((data) => {
-    const b = { id: nextId('B'), committed: 0, spent: 0, ...data };
-    setBudgets((prev) => [b, ...prev]);
-    log('Created budget', 'Finance', b.id, `${b.name} — allocated R${data.allocated.toLocaleString()}`);
-    showToast(`Budget "${b.name}" created`);
-    persistInsert(TABLES.budgets, {
-      id: b.id, name: b.name, category: b.category, fiscal_year: b.fiscalYear, department: b.department, owner: b.owner,
-      allocated: b.allocated, committed: b.committed, spent: b.spent,
-    }, 'new budget');
+    const { lineItems, groupName, projectId, department, owner, fiscalYear } = data;
+    const groupId = nextId('BGRP');
+    const rows = lineItems.map((li) => ({
+      id: nextId('B'), groupId, groupName, projectId: projectId || '', department, owner, fiscalYear,
+      name: li.name, allocated: Number(li.allocated) || 0, committed: 0, spent: 0,
+    }));
+    setBudgets((prev) => [...rows, ...prev]);
+    const total = rows.reduce((s, r) => s + r.allocated, 0);
+    log('Created budget', 'Finance', groupId, `${groupName} — ${rows.length} line item${rows.length === 1 ? '' : 's'}, R${total.toLocaleString()} allocated`);
+    showToast(`Budget "${groupName}" created`);
+    rows.forEach((r) => {
+      persistInsert(TABLES.budgets, {
+        id: r.id, name: r.name, group_id: r.groupId, group_name: r.groupName, project_id: r.projectId || null,
+        fiscal_year: r.fiscalYear, department: r.department, owner: r.owner,
+        allocated: r.allocated, committed: r.committed, spent: r.spent,
+      }, 'new budget line item');
+    });
   }, [log, showToast, persistInsert]);
+
+  // Add one more line item to an existing budget group later (e.g. add "Meetings" after the
+  // fact), inheriting that group's Project/Department/Owner/Fiscal Year.
+  const addBudgetLineItem = useCallback((groupId, { name, allocated }) => {
+    const sibling = budgets.find((b) => b.groupId === groupId);
+    if (!sibling) return;
+    const b = {
+      id: nextId('B'), groupId, groupName: sibling.groupName, projectId: sibling.projectId,
+      department: sibling.department, owner: sibling.owner, fiscalYear: sibling.fiscalYear,
+      name, allocated: Number(allocated) || 0, committed: 0, spent: 0,
+    };
+    setBudgets((prev) => [b, ...prev]);
+    log('Added budget line item', 'Finance', b.id, `${sibling.groupName} — added "${name}", R${b.allocated.toLocaleString()}`);
+    showToast(`Line item "${name}" added`);
+    persistInsert(TABLES.budgets, {
+      id: b.id, name: b.name, group_id: b.groupId, group_name: b.groupName, project_id: b.projectId || null,
+      fiscal_year: b.fiscalYear, department: b.department, owner: b.owner,
+      allocated: b.allocated, committed: b.committed, spent: b.spent,
+    }, 'new budget line item');
+  }, [budgets, log, showToast, persistInsert]);
+
+  // Re-link an entire budget group (all its line items) to a different Project/Department/Owner.
+  const updateBudgetGroup = useCallback((groupId, patch) => {
+    setBudgets((prev) => prev.map((b) => (b.groupId === groupId ? { ...b, ...patch } : b)));
+    const group = budgets.find((b) => b.groupId === groupId);
+    log('Updated budget group', 'Finance', groupId, `${group?.groupName || groupId} — settings updated`);
+    showToast('Budget updated');
+    const dbPatch = {};
+    if ('projectId' in patch) dbPatch.project_id = patch.projectId || null;
+    if ('department' in patch) dbPatch.department = patch.department;
+    if ('owner' in patch) dbPatch.owner = patch.owner;
+    supabase.from(TABLES.budgets).update(dbPatch).eq('group_id', groupId)
+      .then(({ error }) => { if (error) persistError(error, 'budget group'); });
+  }, [budgets, log, showToast, persistError]);
 
   const adjustBudgetAllocation = useCallback((budgetId, newAllocated) => {
     setBudgets((prev) => prev.map((b) => (b.id === budgetId ? { ...b, allocated: newAllocated } : b)));
@@ -939,7 +987,7 @@ export function AppProvider({ children }) {
     currentUser, role, users, switchRole, demoRoster,
     loading, loadError,
     projects, addProject, toggleProjectActive,
-    budgets, createBudget, adjustBudgetAllocation, budgetAvailable,
+    budgets, createBudget, addBudgetLineItem, updateBudgetGroup, adjustBudgetAllocation, budgetAvailable,
     travelRequests, submitTravelRequest, hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
     ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,
     financeRequests, submitFinanceRequest, edaReview, mentorApprove, lineManagerReview, bookkeeperVerify, accountantReview, financeCeoApprove, processPayment, resubmitFinanceRequest,

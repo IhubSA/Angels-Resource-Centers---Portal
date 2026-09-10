@@ -77,7 +77,7 @@ export default function TravelDetail({ requestId, onClose }) {
             <div className="kv-row"><span className="k">Project</span><span className="v">{project?.name || tr.projectId || '—'}</span></div>
             <div className="kv-row"><span className="k">Estimated Cost</span><span className="v">{money(tr.estimatedCost)}</span></div>
             {tr.booking.actualCost != null && <div className="kv-row"><span className="k">Actual (booked) Cost</span><span className="v">{money(tr.booking.actualCost)}</span></div>}
-            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget?.name || tr.budgetId}</span></div>
+            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget ? `${budget.groupName} — ${budget.name}` : tr.budgetId}</span></div>
             <div className="kv-row"><span className="k">S&T's Advance Required</span><span className="v">{tr.sntAdvanceRequired ? 'Yes' : 'No'}</span></div>
             {tr.travelJustification && <div className="kv-row"><span className="k">Travel Justification</span><span className="v">{tr.travelJustification}</span></div>}
           </div>

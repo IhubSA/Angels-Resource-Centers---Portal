@@ -55,7 +55,7 @@ export default function FinanceRequestForm({ open, onClose }) {
           <div className="field"><label>Amount (ZAR) *</label><input type="number" min="0" className="input" value={form.amount} onChange={(e) => update('amount', e.target.value)} /></div>
           <div className="field"><label>Budget Line *</label>
             <select className="input" value={form.budgetId} onChange={(e) => update('budgetId', e.target.value)}>
-              {budgets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {budgets.map((b) => <option key={b.id} value={b.id}>{b.groupName} — {b.name}</option>)}
             </select>
           </div>
         </div>

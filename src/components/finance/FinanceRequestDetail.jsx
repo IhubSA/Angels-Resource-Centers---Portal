@@ -90,7 +90,7 @@ export default function FinanceRequestDetail({ requestId, onClose }) {
             <div className="kv-row"><span className="k">Description</span><span className="v">{fr.description}</span></div>
             <div className="kv-row"><span className="k">Amount</span><span className="v">{money(fr.amount)}</span></div>
             <div className="kv-row"><span className="k">Category</span><span className="v">{fr.category}</span></div>
-            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget?.name || fr.budgetId}</span></div>
+            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget ? `${budget.groupName} — ${budget.name}` : fr.budgetId}</span></div>
             <div className="kv-row"><span className="k">Procurement (FIN-03)</span><span className="v">{fr.procurementRef || procurementRequirementFor(fr.amount)}</span></div>
             {fr.linkedTravelRequestId && <div className="kv-row"><span className="k">Linked Travel Request</span><span className="v">{fr.linkedTravelRequestId}</span></div>}
             {isApr && <div className="kv-row"><span className="k">Beneficiary Development Plan</span><span className="v">{fr.beneficiaryDevelopmentPlan || '—'}</span></div>}
@@ -249,7 +249,7 @@ export default function FinanceRequestDetail({ requestId, onClose }) {
                   <div className="field"><label>Amount (ZAR) *</label><input type="number" className="input" value={editForm.amount} onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))} /></div>
                   <div className="field"><label>Budget Line *</label>
                     <select className="input" value={editForm.budgetId} onChange={(e) => setEditForm((f) => ({ ...f, budgetId: e.target.value }))}>
-                      {budgets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      {budgets.map((b) => <option key={b.id} value={b.id}>{b.groupName} — {b.name}</option>)}
                     </select>
                   </div>
                 </div>
