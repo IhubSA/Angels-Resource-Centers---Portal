@@ -33,7 +33,10 @@ export default function TravelDetail({ requestId, onClose }) {
   } = useApp();
   const tr = travelRequests.find((t) => t.id === requestId);
   const [comment, setComment] = useState('');
-  const [bookingRef, setBookingRef] = useState('');
+  // One booking reference per itinerary leg — a multi-leg trip can involve several separate
+  // flight/accommodation bookings (2026-09-10). Keyed by leg index rather than a fixed-length
+  // array so it stays correct regardless of which request is currently open.
+  const [legRefs, setLegRefs] = useState({});
   const [actualCost, setActualCost] = useState('');
   const [holdBudget, setHoldBudget] = useState('');
   const [holdCost, setHoldCost] = useState('');
@@ -107,6 +110,7 @@ export default function TravelDetail({ requestId, onClose }) {
                       <div className="kv-row"><span className="k">Rental Car</span><span className="v">{RENTAL_CAR_LABELS[leg.rentalCar] || 'Not required'}</span></div>
                       {leg.rentalCar === 'O' && leg.oClassReason && <div className="kv-row"><span className="k">Reason for O Class</span><span className="v">{leg.oClassReason}</span></div>}
                       {leg.secondDriverRequired && leg.secondDriverName && <div className="kv-row"><span className="k">Second Driver</span><span className="v">{leg.secondDriverName}</span></div>}
+                      {leg.bookingRef && <div className="kv-row"><span className="k">Booking Reference</span><span className="v">{leg.bookingRef}</span></div>}
                       {leg.accommodationRequired && <div className="kv-row"><span className="k">Accommodation</span><span className="v">{leg.accommodationDetails || 'Required — details not specified'}</span></div>}
                     </div>
                   </div>
@@ -214,9 +218,21 @@ export default function TravelDetail({ requestId, onClose }) {
 
           {canBook && (
             <ActionCard icon={CalendarCheck} title="Stage 3 — Book Flights & Accommodation">
-              <div className="field"><label>Booking Reference</label><input className="input" value={bookingRef} onChange={(e) => setBookingRef(e.target.value)} placeholder="e.g. BK-99123" /></div>
+              {tr.itinerary.length > 1 && <p className="hint" style={{ marginBottom: 8 }}>This trip has {tr.itinerary.length} legs — give each its own booking reference (e.g. separate flights).</p>}
+              {tr.itinerary.map((leg, i) => (
+                <div className="field" key={leg.id || i}>
+                  <label>Booking Reference — Leg {i + 1}: {leg.destination || 'Untitled destination'} ({TRAVEL_TYPE_LABELS[leg.travelType] || leg.travelType})</label>
+                  <input className="input" value={legRefs[i] || ''} onChange={(e) => setLegRefs((r) => ({ ...r, [i]: e.target.value }))} placeholder="e.g. BK-99123" />
+                </div>
+              ))}
               <div className="field"><label>Actual Cost (ZAR, for Xero)</label><input type="number" className="input" value={actualCost} onChange={(e) => setActualCost(e.target.value)} placeholder={tr.estimatedCost} /></div>
-              <button className="btn btn-primary btn-block" disabled={!bookingRef || !actualCost} onClick={() => confirmBooking(tr.id, bookingRef, Number(actualCost))}>Confirm Booking & Record in Xero</button>
+              <button
+                className="btn btn-primary btn-block"
+                disabled={!actualCost || tr.itinerary.some((_, i) => !legRefs[i])}
+                onClick={() => confirmBooking(tr.id, tr.itinerary.map((_, i) => legRefs[i] || ''), Number(actualCost))}
+              >
+                Confirm Booking & Record in Xero
+              </button>
             </ActionCard>
           )}
 

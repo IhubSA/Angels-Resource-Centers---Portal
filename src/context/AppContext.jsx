@@ -347,20 +347,28 @@ export function AppProvider({ children }) {
   }, [currentUser, log, notify, showToast, persistUpdate]);
 
   // Stage 3 — Bookkeeper/Finance: book flights & accommodation; record confirmations and costs in Xero.
-  const confirmBooking = useCallback((id, bookingRef, actualCost) => {
+  // legBookingRefs: an array of booking reference strings, one per itinerary leg (in leg
+  // order) — a multi-leg trip can involve several separate flight/accommodation bookings,
+  // each with its own reference, per Brent's request (2026-09-10). A single-leg trip is just
+  // a 1-item array, so this covers the old single-reference behaviour too. The combined,
+  // comma-joined string is still kept on `booking.bookingRef` so every place that already
+  // displayed a single booking reference (the approval timeline, audit log) keeps working.
+  const confirmBooking = useCallback((id, legBookingRefs, actualCost) => {
     setTravelRequests((prev) => prev.map((tr) => {
       if (tr.id !== id) return tr;
       const budget = budgets.find((b) => b.id === tr.budgetId);
       const newCommitted = budget ? budget.committed + actualCost : actualCost;
       setBudgets((prevB) => prevB.map((b) => (b.id === tr.budgetId ? { ...b, committed: newCommitted } : b)));
-      const booking = { confirmed: true, bookedBy: currentUser.id, bookedByName: currentUser.name, bookingRef, bookedDate: today(), actualCost };
+      const itinerary = (tr.itinerary || []).map((leg, i) => ({ ...leg, bookingRef: legBookingRefs[i] || '' }));
+      const combinedRef = legBookingRefs.filter(Boolean).join(', ');
+      const booking = { confirmed: true, bookedBy: currentUser.id, bookedByName: currentUser.name, bookingRef: combinedRef, bookedDate: today(), actualCost };
       const financeReview = { ...tr.financeReview, status: 'pending' };
-      log('Booked flights & accommodation', 'Travel', id, `${bookingRef} — recorded in Xero at R${actualCost.toLocaleString()}`);
+      log('Booked flights & accommodation', 'Travel', id, `${combinedRef} — recorded in Xero at R${actualCost.toLocaleString()}`);
       notify({ role: ROLES.FINANCE_MANAGER, title: 'Travel request awaiting financial review', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: id });
       showToast('Booking recorded — forwarded to Finance Manager for review');
-      persistUpdate(TABLES.travelRequests, id, { booking, finance_review: financeReview, status: 'pending_finance_review' }, 'booking confirmation');
+      persistUpdate(TABLES.travelRequests, id, { booking, itinerary, finance_review: financeReview, status: 'pending_finance_review' }, 'booking confirmation');
       persistUpdate(TABLES.budgets, tr.budgetId, { committed: newCommitted }, 'budget commitment');
-      return { ...tr, booking, financeReview, status: 'pending_finance_review' };
+      return { ...tr, booking, itinerary, financeReview, status: 'pending_finance_review' };
     }));
   }, [budgets, currentUser, log, notify, showToast, persistUpdate]);
 
