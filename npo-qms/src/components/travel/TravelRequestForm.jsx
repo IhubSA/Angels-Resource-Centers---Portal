@@ -24,7 +24,6 @@ const BLANK_LEG = {
   roundTrip: false,
   returnDateTime: '',
   rentalCar: 'none',
-  oClassReason: '',
   secondDriverRequired: false,
   secondDriverName: '',
   accommodationRequired: false,
@@ -88,13 +87,6 @@ function LegFields({ leg, update }) {
         )}
       </div>
 
-      {leg.rentalCar === 'O' && (
-        <div className="field">
-          <label>Reason for O Class Vehicle *</label>
-          <textarea className="input" value={leg.oClassReason} onChange={(e) => update('oClassReason', e.target.value)} placeholder="Why is the larger O Class vehicle needed? e.g. transporting bulky equipment or materials" />
-        </div>
-      )}
-
       <div className="field">
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={leg.accommodationRequired} onChange={(e) => update('accommodationRequired', e.target.checked)} />
@@ -108,62 +100,49 @@ function LegFields({ leg, update }) {
   );
 }
 
-// `editRequest` (optional): an existing, rejected travel request being edited & resubmitted
-// (2026-09-11 process rebuild — pre-booking rejections are resubmittable) — when set, the form
-// pre-fills from it and calls `resubmitTravelRequest` instead of `submitTravelRequest`.
-export default function TravelRequestForm({ open, onClose, editRequest }) {
-  const { submitTravelRequest, resubmitTravelRequest, budgets, projects, currentUser } = useApp();
+export default function TravelRequestForm({ open, onClose }) {
+  const { submitTravelRequest, budgets, projects, users, currentUser } = useApp();
+  const travelBudgets = budgets.filter((b) => b.category === 'Travel' || b.department === currentUser.department);
   const activeProjects = projects.filter((p) => p.active);
-  const isEdit = Boolean(editRequest);
+  const travelerChoices = users.filter((u) => u.active);
 
-  // Budget Line choices narrow to whichever Project (Cost Code) is selected (falling back to
-  // every budget line when nothing in the system is linked to that project yet), per Brent's
-  // choice to link Budgets to Projects (2026-09-10) — a Budget can list several Cost Codes
-  // (costCodeIds) since 2026-09-10's Main Project rework, so check that array as well as the
-  // older single-project link (projectId) that pre-2026-09-10 budgets still carry.
-  function isBudgetLinkedToProject(b, projectId) {
-    return (b.costCodeIds && b.costCodeIds.includes(projectId)) || b.projectId === projectId;
-  }
-  function budgetsForProject(projectId) {
-    const linked = budgets.filter((b) => isBudgetLinkedToProject(b, projectId));
-    return linked.length > 0 ? linked : budgets;
-  }
-
-  const [trip, setTrip] = useState(() => (editRequest ? {
-    businessActivity: editRequest.businessActivity || '',
-    projectId: editRequest.projectId || activeProjects[0]?.id || '',
-    budgetId: editRequest.budgetId || budgetsForProject(editRequest.projectId || activeProjects[0]?.id || '')[0]?.id || '',
-    estimatedCost: String(editRequest.estimatedCost ?? ''),
-    travelJustification: editRequest.travelJustification || '',
-    sntAdvanceRequired: !!editRequest.sntAdvanceRequired,
-    multiItinerary: !!editRequest.multiItinerary,
-  } : {
+  const [trip, setTrip] = useState({
+    travelerIds: [currentUser.id],
     businessActivity: '',
     projectId: activeProjects[0]?.id || '',
-    budgetId: budgetsForProject(activeProjects[0]?.id || '')[0]?.id || '',
+    budgetId: travelBudgets[0]?.id || budgets[0]?.id || '',
     estimatedCost: '',
     travelJustification: '',
     sntAdvanceRequired: false,
     multiItinerary: false,
-  }));
-  const budgetChoices = useMemo(() => budgetsForProject(trip.projectId), [budgets, trip.projectId]);
-  const [legDraft, setLegDraft] = useState(() => (editRequest && !editRequest.multiItinerary ? { ...BLANK_LEG, ...(editRequest.itinerary?.[0] || {}) } : { ...BLANK_LEG }));
-  const [itinerary, setItinerary] = useState(() => (editRequest && editRequest.multiItinerary ? (editRequest.itinerary || []) : []));
+  });
+  const [legDraft, setLegDraft] = useState({ ...BLANK_LEG });
+  const [itinerary, setItinerary] = useState([]);
   const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   function updateTrip(field, value) { setTrip((t) => ({ ...t, [field]: value })); }
   function updateLeg(field, value) { setLegDraft((l) => ({ ...l, [field]: value })); }
 
+  function toggleTraveler(id) {
+    setTrip((t) => {
+      const has = t.travelerIds.includes(id);
+      return { ...t, travelerIds: has ? t.travelerIds.filter((x) => x !== id) : [...t.travelerIds, id] };
+    });
+  }
+
+  const selectedTravelers = useMemo(
+    () => travelerChoices.filter((u) => trip.travelerIds.includes(u.id)),
+    [travelerChoices, trip.travelerIds]
+  );
+
   function legIsComplete(leg) {
     if (!leg.destination || !leg.departDateTime) return false;
     if (leg.roundTrip && !leg.returnDateTime) return false;
-    if (leg.rentalCar === 'O' && !leg.oClassReason) return false;
     return true;
   }
 
   function tripFieldsComplete() {
-    return trip.businessActivity && trip.projectId && trip.budgetId
+    return trip.travelerIds.length > 0 && trip.businessActivity && trip.projectId && trip.budgetId
       && trip.estimatedCost !== '' && trip.travelJustification;
   }
 
@@ -182,10 +161,9 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
   }
 
   function resetAll() {
-    const firstProject = activeProjects[0]?.id || '';
     setTrip({
-      businessActivity: '', projectId: firstProject,
-      budgetId: budgetsForProject(firstProject)[0]?.id || '', estimatedCost: '', travelJustification: '',
+      travelerIds: [currentUser.id], businessActivity: '', projectId: activeProjects[0]?.id || '',
+      budgetId: travelBudgets[0]?.id || budgets[0]?.id || '', estimatedCost: '', travelJustification: '',
       sntAdvanceRequired: false, multiItinerary: false,
     });
     setLegDraft({ ...BLANK_LEG });
@@ -193,10 +171,10 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
     setError('');
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
     if (!tripFieldsComplete()) {
-      setError('Please complete all required fields.');
+      setError('Please complete all required fields, including at least one traveler.');
       return;
     }
     const finalItinerary = trip.multiItinerary ? itinerary : [legDraft];
@@ -205,22 +183,19 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
       return;
     }
     if (!trip.multiItinerary && !legIsComplete(legDraft)) {
-      setError('Complete the destination, date & time (and return date, if a round trip, and a reason if an O Class vehicle is selected).');
+      setError('Complete the destination, date & time (and return date, if a round trip).');
       return;
     }
     for (const leg of finalItinerary) {
       if (!legIsComplete(leg)) {
-        setError('One of the itinerary legs is missing a required field (destination, date & time, or an O Class reason).');
+        setError('One of the itinerary legs is missing its destination or date & time.');
         return;
       }
     }
 
-    setSubmitting(true);
-    const data = {
-      // Traveler(s) — per Brent's request (2026-09-10), a Travel Request always covers the
-      // requester only; there is no "book on behalf of others" picker anymore.
-      travelers: [{ id: currentUser.id, name: currentUser.name, email: currentUser.email, phone: currentUser.phone || '', department: currentUser.department }],
-      noOfTravelers: 1,
+    submitTravelRequest({
+      travelers: selectedTravelers.map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone || '', department: u.department })),
+      noOfTravelers: selectedTravelers.length,
       businessActivity: trip.businessActivity,
       projectId: trip.projectId,
       budgetId: trip.budgetId,
@@ -229,25 +204,19 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
       sntAdvanceRequired: trip.sntAdvanceRequired,
       multiItinerary: trip.multiItinerary,
       itinerary: finalItinerary.map((leg, i) => ({ id: `LEG-${i + 1}-${Date.now().toString(36)}`, ...leg })),
-    };
-    if (isEdit) {
-      resubmitTravelRequest(editRequest.id, data);
-    } else {
-      await submitTravelRequest(data);
-    }
-    setSubmitting(false);
+    });
     resetAll();
     onClose();
   }
 
-  const canSubmit = !submitting && (trip.multiItinerary ? itinerary.length > 0 : legIsComplete(legDraft));
+  const canSubmit = trip.multiItinerary ? itinerary.length > 0 : legIsComplete(legDraft);
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={isEdit ? 'Edit & Resubmit Travel Request' : 'New Travel Request'} subtitle="Single trip or multi-leg itinerary — Air, Road, Air & Road, or Accommodation" footer={
+    <Modal open={open} onClose={onClose} size="lg" title="New Travel Request" subtitle="Single trip or multi-leg itinerary — Air, Road, Air & Road, or Accommodation" footer={
       <>
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" form="travel-request-form" type="submit" disabled={!canSubmit}>
-          {submitting ? 'Submitting…' : isEdit ? 'Resubmit Request' : trip.multiItinerary ? `Submit Trip (${itinerary.length} leg${itinerary.length === 1 ? '' : 's'})` : 'Submit Request'}
+          {trip.multiItinerary ? `Submit Trip (${itinerary.length} leg${itinerary.length === 1 ? '' : 's'})` : 'Submit Request'}
         </button>
       </>
     }>
@@ -256,8 +225,22 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
 
         <div className="section-title">Who's Travelling</div>
         <div className="kv-row" style={{ marginBottom: 10 }}>
-          <span className="k">Traveler</span>
-          <span className="v">{currentUser.name} ({currentUser.department}) — the requester</span>
+          <span className="k">Requested by</span>
+          <span className="v">{currentUser.name} ({currentUser.department})</span>
+        </div>
+        <div className="field">
+          <label>Traveler(s) * — select everyone this request covers</label>
+          <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+            {travelerChoices.map((u) => (
+              <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 12.5, cursor: 'pointer' }}>
+                <input type="checkbox" checked={trip.travelerIds.includes(u.id)} onChange={() => toggleTraveler(u.id)} />
+                <span style={{ fontWeight: 600 }}>{u.name}</span>
+                <span className="cell-muted">{u.department}</span>
+                <span className="cell-muted" style={{ marginLeft: 'auto', textAlign: 'right' }}>{u.email}{u.phone ? ` · ${u.phone}` : ''}</span>
+              </label>
+            ))}
+          </div>
+          <p className="hint">No. of Travelers: <strong>{selectedTravelers.length}</strong> — a HOD, PA or Travel Office user can book on behalf of colleagues by selecting more than one.</p>
         </div>
 
         <div className="section-title">Trip Details</div>
@@ -265,10 +248,7 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
         <div className="field-row">
           <div className="field">
             <label>Project *</label>
-            <select className="input" value={trip.projectId} onChange={(e) => {
-              const projectId = e.target.value;
-              setTrip((t) => ({ ...t, projectId, budgetId: budgetsForProject(projectId)[0]?.id || '' }));
-            }}>
+            <select className="input" value={trip.projectId} onChange={(e) => updateTrip('projectId', e.target.value)}>
               <option value="">Select a project…</option>
               {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -276,11 +256,8 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
           <div className="field">
             <label>Budget Line *</label>
             <select className="input" value={trip.budgetId} onChange={(e) => updateTrip('budgetId', e.target.value)}>
-              {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.groupName} — {b.name}</option>)}
+              {budgets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-            {budgetChoices.length > 0 && !budgetChoices.some((b) => isBudgetLinkedToProject(b, trip.projectId)) && (
-              <p className="hint">No budgets are linked to this project yet — showing every budget line.</p>
-            )}
           </div>
         </div>
         <div className="field-row">
@@ -327,7 +304,7 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
           </>
         )}
 
-        <p className="hint">Your request will route through: HOD → Travel Officer → (Finance, if over budget or R{'50,000'}) → CEO → Travel Officer books.</p>
+        <p className="hint">Your request will route through the six-stage approval chain: HOD → Travel Office → Bookkeeper/Finance → Finance Manager → CEO → Board Treasurer (for trips above R{'50,000'}).</p>
       </form>
     </Modal>
   );

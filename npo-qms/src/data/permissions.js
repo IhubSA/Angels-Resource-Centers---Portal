@@ -1,16 +1,11 @@
 // Role & permission model for Angels Resource Centre NPO Management System
 //
-// Travel roles/stages were REBUILT 2026-09-11 per Brent's hand-drawn process flow diagram,
-// replacing the original six-stage ATMS-FRM-001 chain: Operational/HOD -> Travel Officer
-// (review AND booking, merged from the old separate Bookkeeper/Finance booking role) ->
-// [conditional: Finance review, only when the trip exceeds its budget line or R50,000] ->
-// CEO approval -> Travel Officer books -> travel happens -> Travel Officer/traveller submits
-// the expense claim -> Travel Officer receipt check -> CEO final approval -> Finance active
-// review & payment. The Board Treasurer role/step is REMOVED (no trip currently requires it —
-// Finance + CEO now cover what used to route to the Board Treasurer above R50,000). Rejections
-// at any pre-booking stage are resubmittable (the requester edits and resubmits, restarting at
-// HOD) rather than terminal. See deployment-notes.md "part 11" for the full rationale and the
-// assumptions made for what the diagram left unspecified.
+// Travel roles/stages are aligned to the "Angels Business Travel — Approval &
+// Reimbursement Workflow" (source: ATMS-FRM-001, drafted 24 Aug 2026): a six-stage
+// internal approval chain — Operational/HOD -> Travel Office -> Bookkeeper/Finance
+// -> Finance Manager -> CEO -> Board Treasurer (conditional, high-value trips only)
+// — followed by a two-step post-travel expense/reimbursement review
+// (Travel Office receipt check -> Finance Manager payment).
 //
 // Finance Hub roles/stages are aligned to the "Angels Finance Hub — Request & Payment
 // Workflow" (source: FIN-01, FIN-02, FIN-03, drafted 24 Aug 2026): a shared four-stage
@@ -58,11 +53,11 @@ export const ROLE_DESCRIPTIONS = {
   [ROLES.ADMIN]: 'Full system access, including user management',
   [ROLES.STAFF]: 'Identifies trip/purchase needs, submits requests & claims, uploads documents',
   [ROLES.OPERATIONAL_HOD]: 'Reviews business justification, dates & policy alignment for Travel (Stage 1)',
-  [ROLES.TRAVEL_OFFICE]: 'Reviews & approves Travel requests, books flights & accommodation, and runs the post-travel receipt check',
-  [ROLES.BOOKKEEPER_FINANCE]: 'Verifies documentation and processes payment for Finance Hub requests (no longer involved in Travel booking as of the 2026-09-11 process rebuild)',
-  [ROLES.FINANCE_MANAGER]: 'Pre-booking review of Travel requests that exceed budget or R50,000; active review & payment of post-travel expense claims; manages Finance Hub budget lines',
-  [ROLES.CEO]: 'Approves Travel requests before booking, and gives final approval on the completed expense claim; final approval on Finance Hub requests',
-  [ROLES.BOARD_TREASURER]: 'No longer used in the Travel approval chain as of the 2026-09-11 process rebuild (kept only for historical/backward compatibility)',
+  [ROLES.TRAVEL_OFFICE]: 'Quality review of links, availability & policy compliance; post-travel receipt checks (Travel Stages 2 & 6)',
+  [ROLES.BOOKKEEPER_FINANCE]: 'Books flights & accommodation for Travel (Stage 3); verifies documentation and processes payment for Finance Hub requests',
+  [ROLES.FINANCE_MANAGER]: 'Reviews financial commitment against Travel budget & policy; records Travel expenses and issues payment; manages Finance Hub budget lines',
+  [ROLES.CEO]: 'Approves Travel requests above the Board Treasurer threshold; gives final approval on Finance Hub requests',
+  [ROLES.BOARD_TREASURER]: 'Counter-signs high-value Travel approvals above threshold (conditional)',
   [ROLES.AUDITOR]: 'Read-only access across all modules',
   [ROLES.LINE_MANAGER]: 'Reviews budget availability and business justification for Finance Hub requests (Stage 1)',
   [ROLES.ACCOUNTANT]: 'Reviews financial accuracy, budget availability and GL coding for Finance Hub requests (Stage 3)',
@@ -70,14 +65,10 @@ export const ROLE_DESCRIPTIONS = {
   [ROLES.MENTOR]: 'Endorses Asset Purchase Requests (APR) from a mentorship perspective (APR-only, pre-Stage 1)',
 };
 
-// Trips with an estimated cost above this ZAR amount, OR that exceed what's left available
-// on their Budget Line, require a pre-booking Finance review before CEO approval (2026-09-11
-// process rebuild — previously this figure gated a now-removed Board Treasurer counter-
-// signature step). The figure itself is unchanged and still a working placeholder pending
-// confirmation (see ATMS-DEV-001).
-export const TRAVEL_HIGH_VALUE_THRESHOLD = 50000;
-// Old name kept as an alias in case anything still imports it.
-export const BOARD_TREASURER_THRESHOLD = TRAVEL_HIGH_VALUE_THRESHOLD;
+// Trips with an actual (or estimated, pre-booking) cost above this ZAR amount require
+// Board Treasurer counter-signature after CEO approval. ATMS-FRM-001 does not specify
+// this figure — treat as a working placeholder pending confirmation (see ATMS-DEV-001).
+export const BOARD_TREASURER_THRESHOLD = 50000;
 
 // Procurement quotation thresholds for Finance Hub requests, per FIN-03.
 export const PROCUREMENT_THRESHOLDS = [
@@ -133,14 +124,14 @@ export const DEFAULT_PERMISSIONS = {
     audit: { view: false },
   },
   [ROLES.TRAVEL_OFFICE]: {
-    travel: { view: 'all', create: false, hodReview: false, qualityReview: true, book: true, financeReview: false, ceoApprove: false, boardSign: false, receiptCheck: true, pay: false },
+    travel: { view: 'all', create: false, hodReview: false, qualityReview: true, book: false, financeReview: false, ceoApprove: false, boardSign: false, receiptCheck: true, pay: false },
     finance: { view: 'own', create: false, edaReview: false, mentorApprove: false, lineManagerReview: false, bookkeeperVerify: false, accountantReview: false, ceoApprove: false, processPayment: false, manageBudgets: false, export: false },
     documents: { view: 'all', upload: true, review: false, approve: false, archive: false, manageRetention: false },
     admin: { manageUsers: false, managePermissions: false },
     audit: { view: false },
   },
   [ROLES.BOOKKEEPER_FINANCE]: {
-    travel: { view: 'all', create: false, hodReview: false, qualityReview: false, book: false, financeReview: false, ceoApprove: false, boardSign: false, receiptCheck: false, pay: false },
+    travel: { view: 'all', create: false, hodReview: false, qualityReview: false, book: true, financeReview: false, ceoApprove: false, boardSign: false, receiptCheck: false, pay: false },
     finance: { view: 'all', create: false, edaReview: false, mentorApprove: false, lineManagerReview: false, bookkeeperVerify: true, accountantReview: false, ceoApprove: false, processPayment: true, manageBudgets: false, export: true },
     documents: { view: 'all', upload: true, review: false, approve: false, archive: false, manageRetention: false },
     admin: { manageUsers: false, managePermissions: false },
@@ -233,13 +224,13 @@ export const PERMISSION_SCHEMA = [
     actions: [
       { key: 'create', label: 'Submit travel request' },
       { key: 'hodReview', label: 'Stage 1 — HOD review' },
-      { key: 'qualityReview', label: 'Stage 2 — Travel Officer review & approve' },
-      { key: 'book', label: 'Stage 3 — Travel Officer books flights & accommodation' },
-      { key: 'financeReview', label: 'Conditional pre-booking Finance review (over budget / over R50,000)' },
-      { key: 'ceoApprove', label: 'CEO approval — pre-booking gate, and post-travel final approval' },
-      { key: 'boardSign', label: '(No longer used — Board Treasurer step removed 2026-09-11)' },
-      { key: 'receiptCheck', label: 'Post-travel — Travel Officer receipt check' },
-      { key: 'pay', label: 'Post-travel — Finance: active review, approve/reject & pay' },
+      { key: 'qualityReview', label: 'Stage 2 — Travel Office quality review' },
+      { key: 'book', label: 'Stage 3 — Book & record (Bookkeeper)' },
+      { key: 'financeReview', label: 'Stage 4 — Finance Manager budget/policy review' },
+      { key: 'ceoApprove', label: 'Stage 5 — CEO approval' },
+      { key: 'boardSign', label: 'Stage 6 — Board Treasurer counter-signature' },
+      { key: 'receiptCheck', label: 'Post-travel — Travel Office receipt check' },
+      { key: 'pay', label: 'Post-travel — Finance Manager record & pay' },
     ],
   },
   {

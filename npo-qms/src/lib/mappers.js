@@ -27,22 +27,7 @@ export function mapProject(row) {
     department: row.department || '',
     active: row.active,
     createdDate: row.created_date,
-    // Running counter behind the per-project Travel Request Number (e.g. CODE-001,
-    // CODE-002, ...) — incremented atomically in the DB via the npo_portal_next_request_seq()
-    // function each time a request is submitted against this project (added 2026-09-10).
-    requestSeq: row.request_seq || 0,
-    // Which client/programme "Main Project" this Project (now effectively a Cost Code) sits
-    // under, e.g. several "Anthem - <Site> - Internship" Projects all share one Main Project,
-    // "Anthem" — added 2026-09-10 per Brent's request. Blank for Projects not yet grouped.
-    mainProjectId: row.main_project_id || '',
   };
-}
-
-// A "Main Project" is the client/programme umbrella (e.g. "Anthem", "ENGIE", "SCATEC") that
-// several individual Projects/Cost Codes sit under — added 2026-09-10 so Budgets can be named
-// and organized at the client level while still tracking spend against specific Cost Codes.
-export function mapMainProject(row) {
-  return { id: row.id, name: row.name, createdDate: row.created_date };
 }
 
 export function mapBudget(row) {
@@ -50,20 +35,6 @@ export function mapBudget(row) {
     id: row.id,
     name: row.name,
     category: row.category,
-    // A "Budget" is created once (Budget Name, Project, Department, Owner) with one or more
-    // freely-named Line Items (Travel, Training, Meetings, ...) — each line item is still one
-    // row here so all the existing allocated/committed/spent bookkeeping keeps working
-    // unchanged; groupId/groupName tie a budget's line items together for display (added 2026-09-10).
-    groupId: row.group_id || row.id,
-    groupName: row.group_name || row.name,
-    // Legacy single-Project link, kept for budgets created before 2026-09-10's Main
-    // Project/Cost Code rework — new budgets use mainProjectId + costCodeIds instead.
-    projectId: row.project_id || '',
-    // Main Project (client/programme, e.g. "Anthem") and the specific Cost Code(s) (individual
-    // Projects, e.g. "Anthem - Amstilite - Internship") this budget draws against — a budget can
-    // span more than one Cost Code, e.g. a programme spanning two funding-year codes (2026-09-10).
-    mainProjectId: row.main_project_id || '',
-    costCodeIds: Array.isArray(row.cost_code_ids) ? row.cost_code_ids : [],
     fiscalYear: row.fiscal_year,
     department: row.department,
     owner: row.owner,
@@ -103,10 +74,6 @@ export function mapTravelRequest(row, expenseRows = []) {
     budgetId: row.budget_id,
     status: row.status,
     createdDate: row.created_date,
-    // Per-project sequential reference (e.g. ANT_INT_AMS_PAR_TVT-001) — assigned once at
-    // submission via the DB's atomic per-project counter; blank for requests submitted
-    // before this existed, or with no Project selected (added 2026-09-10).
-    requestNumber: row.request_number || '',
     // Rebuilt 2026-09-10 intake fields: multiple travelers (booking on behalf of colleagues),
     // a Project allocation (separate from the Budget Line used for financial tracking), and a
     // multi-leg itinerary — see src/components/travel/TravelRequestForm.jsx.
@@ -125,9 +92,6 @@ export function mapTravelRequest(row, expenseRows = []) {
     booking: row.booking || { confirmed: false, bookedBy: null, bookedByName: '', bookingRef: null, bookedDate: null, actualCost: null },
     financeReview: row.finance_review || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
     ceo: row.ceo || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
-    // Post-travel final CEO approval of the completed trip/expense claim (added 2026-09-11
-    // process rebuild) — distinct from the pre-booking `ceo` approval above.
-    ceoFinal: row.ceo_final || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
     boardTreasurer: row.board_treasurer || { required: false, approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },
     // Post-travel: Travel Office receipt check -> Finance Manager records expense & pays.
     receiptCheck: row.receipt_check || { approverId: null, approverName: '', status: 'not_started', date: null, comment: '' },

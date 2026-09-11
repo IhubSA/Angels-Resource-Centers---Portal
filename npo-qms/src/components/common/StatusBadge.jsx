@@ -25,25 +25,18 @@ const STATUS_MAP = {
   returned_by_bookkeeper: { label: 'Returned by Bookkeeper', tone: 'red' },
   returned_by_accountant: { label: 'Returned by Accountant', tone: 'red' },
   returned_by_ceo: { label: 'Declined by CEO', tone: 'red' },
-  // travel — approval chain rebuilt 2026-09-11 per Brent's process flow diagram
+  // travel — six-stage approval chain (ATMS-FRM-001)
   pending_hod: { label: 'Pending HOD Review', tone: 'amber' },
-  rejected_hod: { label: 'Returned by HOD — Resubmit', tone: 'red' },
-  pending_travel_officer: { label: 'Travel Officer Review', tone: 'amber' },
-  rejected_travel_officer: { label: 'Returned by Travel Officer — Resubmit', tone: 'red' },
+  pending_quality: { label: 'Travel Office Quality Review', tone: 'amber' },
   pending_booking: { label: 'Ready to Book', tone: 'blue' },
-  pending_finance_review: { label: 'Finance Review', tone: 'amber' },
-  rejected_finance: { label: 'Returned by Finance — Resubmit', tone: 'red' },
+  finance_hold: { label: 'Finance Hold', tone: 'red' },
+  pending_finance_review: { label: 'Finance Manager Review', tone: 'amber' },
   pending_ceo: { label: 'Pending CEO Approval', tone: 'amber' },
-  rejected_ceo: { label: 'Declined by CEO — Resubmit', tone: 'red' },
-  pending_ceo_final: { label: 'Pending CEO Final Approval', tone: 'amber' },
+  pending_board: { label: 'Pending Board Sign-off', tone: 'amber' },
   cleared_for_travel: { label: 'Cleared for Travel', tone: 'blue' },
-  expense_review: { label: 'Receipt Check (Travel Officer)', tone: 'amber' },
+  expense_review: { label: 'Receipt Check (Travel Office)', tone: 'amber' },
   reimbursement_hold: { label: 'Needs Corrections', tone: 'red' },
-  pending_payment: { label: 'Finance — Review & Pay', tone: 'blue' },
-  // legacy statuses — kept so old/imported data still renders something sensible
-  pending_quality: { label: 'Travel Officer Review (legacy)', tone: 'amber' },
-  finance_hold: { label: 'Finance Hold (legacy)', tone: 'red' },
-  pending_board: { label: 'Pending Board Sign-off (legacy)', tone: 'amber' },
+  pending_payment: { label: 'Pending Payment', tone: 'blue' },
 };
 
 export default function StatusBadge({ status, label }) {

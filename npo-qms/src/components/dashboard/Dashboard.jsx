@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Landmark, UserCheck, Calculator, HeartHandshake, GraduationCap, Link2, Copy, Check } from 'lucide-react';
+import { Plane, Wallet, FileStack, Users, AlertCircle, TrendingUp, Clock, CheckCircle2, ArrowRight, ShieldCheck, Search, CalendarCheck, Crown, Gavel, UserCheck, Calculator, HeartHandshake, GraduationCap } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, TRAVEL_HIGH_VALUE_THRESHOLD } from '../../data/permissions';
+import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, BOARD_TREASURER_THRESHOLD } from '../../data/permissions';
 import StatusBadge from '../common/StatusBadge';
 import { money, formatDate, pct } from '../../utils/format';
 
@@ -9,25 +8,6 @@ const MODULE_ICON = { Travel: Plane, Finance: Wallet, Documents: FileStack };
 
 export default function Dashboard({ setView }) {
   const { currentUser, role, travelRequests, financeRequests, documents, budgets, auditLog, pendingActions, users, scope } = useApp();
-  const [linkCopied, setLinkCopied] = useState(false);
-  const publicRequestLink = `${window.location.origin}${window.location.pathname}#/request`;
-
-  function handleCopyPublicLink() {
-    const markCopied = () => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(publicRequestLink).then(markCopied).catch(() => {
-        // Fallback for browsers/contexts that block the async clipboard API.
-        const el = document.createElement('textarea');
-        el.value = publicRequestLink;
-        el.style.position = 'fixed';
-        el.style.opacity = '0';
-        document.body.appendChild(el);
-        el.select();
-        try { document.execCommand('copy'); markCopied(); } catch (e) { /* copy not available */ }
-        document.body.removeChild(el);
-      });
-    }
-  }
 
   const travelScope = scope('travel');
   const scopedTravel = travelRequests.filter((tr) => {
@@ -85,24 +65,25 @@ export default function Dashboard({ setView }) {
       ];
     }
     if (role === ROLES.TRAVEL_OFFICE) {
-      const reviewsDue = travelRequests.filter((tr) => tr.status === 'pending_travel_officer').length;
-      const readyToBook = travelRequests.filter((tr) => tr.status === 'pending_booking').length;
+      const qualityDue = travelRequests.filter((tr) => tr.status === 'pending_quality').length;
       const receiptsDue = travelRequests.filter((tr) => tr.status === 'expense_review').length;
-      const cleared = travelRequests.filter((tr) => ['pending_finance_review', 'pending_ceo', 'pending_booking', 'cleared_for_travel', 'expense_review', 'pending_ceo_final', 'pending_payment', 'completed'].includes(tr.status)).length;
+      const cleared = travelRequests.filter((tr) => ['pending_booking', 'pending_finance_review', 'pending_ceo', 'pending_board', 'cleared_for_travel', 'expense_review', 'pending_payment', 'completed'].includes(tr.status)).length;
       return [
-        { label: 'Reviews Due', value: reviewsDue, sub: 'Links, availability, policy (FIN-04-CHK-01)', icon: Search, tone: 'amber' },
-        { label: 'Ready to Book', value: readyToBook, sub: 'Approved — awaiting booking', icon: CalendarCheck, tone: 'amber' },
+        { label: 'Quality Reviews Due', value: qualityDue, sub: 'Links, availability, policy (FIN-04-CHK-01)', icon: Search, tone: 'amber' },
         { label: 'Receipt Checks Due', value: receiptsDue, sub: 'Post-travel expense claims', icon: Clock, tone: 'amber' },
-        { label: 'Requests In Flight', value: cleared, sub: `${travelRequests.length} total requests`, icon: CheckCircle2, tone: 'green' },
+        { label: 'Requests Passed Quality', value: cleared, sub: `${travelRequests.length} total requests`, icon: CheckCircle2, tone: 'green' },
+        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
       ];
     }
     if (role === ROLES.BOOKKEEPER_FINANCE) {
-      const pendingRequests = financeRequests.filter((fr) => String(fr.status).startsWith('pending')).length;
+      const readyToBook = travelRequests.filter((tr) => tr.status === 'pending_booking').length;
+      const holds = travelRequests.filter((tr) => tr.status === 'finance_hold').length;
+      const booked = travelRequests.filter((tr) => tr.booking.confirmed).length;
       return [
-        { label: 'Awaiting My Approval', value: pendingActions.length, sub: 'Finance Hub requests & documents', icon: AlertCircle, tone: 'amber' },
-        { label: 'Requests In Flight', value: pendingRequests, sub: `${financeRequests.length} total requests`, icon: Wallet, tone: 'blue' },
+        { label: 'Ready to Book', value: readyToBook, sub: 'Passed Travel Office quality review', icon: CalendarCheck, tone: 'amber' },
+        { label: 'Finance Holds to Resolve', value: holds, sub: 'Returned by Finance Manager', icon: AlertCircle, tone: 'red' },
+        { label: 'Trips Booked', value: booked, sub: `${travelRequests.length} total requests`, icon: Plane, tone: 'blue' },
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
-        { label: 'Documents Pending Review', value: docsPendingReview, sub: `${documents.length} total documents`, icon: FileStack, tone: 'slate' },
       ];
     }
     if (role === ROLES.ACCOUNTANT) {
@@ -137,22 +118,21 @@ export default function Dashboard({ setView }) {
     }
     if (role === ROLES.CEO) {
       const approvalsDue = travelRequests.filter((tr) => tr.status === 'pending_ceo').length;
-      const finalApprovalsDue = travelRequests.filter((tr) => tr.status === 'pending_ceo_final').length;
-      const highValue = travelRequests.filter((tr) => (tr.estimatedCost || 0) > TRAVEL_HIGH_VALUE_THRESHOLD).length;
+      const highValue = travelRequests.filter((tr) => tr.boardTreasurer.required).length;
       const pendingRequests = financeRequests.filter((fr) => String(fr.status).startsWith('pending')).length;
       return [
-        { label: 'Trip Approvals Due', value: approvalsDue + finalApprovalsDue, sub: 'Awaiting CEO sign-off (pre- & post-travel)', icon: Crown, tone: 'amber' },
-        { label: 'High-Value Trips', value: highValue, sub: `Above R${TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} threshold`, icon: Landmark, tone: 'slate' },
+        { label: 'Trip Approvals Due', value: approvalsDue, sub: 'Awaiting CEO sign-off', icon: Crown, tone: 'amber' },
+        { label: 'High-Value Trips', value: highValue, sub: `Above R${BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold`, icon: Gavel, tone: 'slate' },
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'green' },
         { label: 'Requests In Flight', value: pendingRequests, sub: `${financeRequests.length} total requests`, icon: Wallet, tone: 'blue' },
       ];
     }
     if (role === ROLES.BOARD_TREASURER) {
-      // The Board Treasurer step was removed from the Travel approval chain 2026-09-11 — no
-      // trip currently routes here. This block is inert (kept only for backward compatibility
-      // in case a Board Treasurer user is ever re-added).
+      const signOffsDue = travelRequests.filter((tr) => tr.status === 'pending_board').length;
+      const countersigned = travelRequests.filter((tr) => tr.boardTreasurer.status === 'approved').length;
       return [
-        { label: 'Counter-signatures Due', value: 0, sub: 'Board Treasurer step removed 2026-09-11', icon: ShieldCheck, tone: 'slate' },
+        { label: 'Counter-signatures Due', value: signOffsDue, sub: `Above R${BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold`, icon: Gavel, tone: 'amber' },
+        { label: 'High-Value Trips Signed', value: countersigned, sub: `${travelRequests.filter((tr) => tr.boardTreasurer.required).length} flagged total`, icon: CheckCircle2, tone: 'green' },
         { label: 'Budget Utilization', value: `${pct(totalSpent + totalCommitted, totalAllocated)}%`, sub: `${money(totalAllocated - totalSpent - totalCommitted)} available`, icon: TrendingUp, tone: 'blue' },
         { label: 'Audit Trail Entries', value: auditLog.length, sub: 'Full history logged', icon: ShieldCheck, tone: 'slate' },
       ];
@@ -192,24 +172,6 @@ export default function Dashboard({ setView }) {
           <p className="page-subtitle">{ROLE_LABELS[role]} · {ROLE_DESCRIPTIONS[role]}</p>
         </div>
       </div>
-
-      {role === ROLES.ADMIN && (
-        <div className="card card-pad" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 240 }}>
-            <span className="stat-tile-icon" style={{ background: 'var(--brand-light)', color: 'var(--brand)', flexShrink: 0 }}><Link2 size={16} /></span>
-            <div>
-              <div style={{ fontWeight: 650, fontSize: 13.5 }}>Public Request Link</div>
-              <div className="hint" style={{ margin: 0 }}>Share this with travelers so they can submit a Travel or Finance Hub request without logging into the system.</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <code style={{ fontSize: 12, background: 'var(--bg)', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{publicRequestLink}</code>
-            <button className="btn btn-secondary btn-sm" onClick={handleCopyPublicLink}>
-              {linkCopied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy Link</>}
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
         {stats.map((s) => (
@@ -291,7 +253,7 @@ export default function Dashboard({ setView }) {
               return (
                 <div key={b.id} style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
-                    <strong>{b.groupName} — {b.name}</strong>
+                    <strong>{b.name}</strong>
                     <span className="cell-muted">{money(b.spent)} + {money(b.committed)} committed of {money(b.allocated)}</span>
                   </div>
                   <div className="progress-track">

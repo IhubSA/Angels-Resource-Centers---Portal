@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, AlertTriangle, UserCheck, Search, CalendarCheck, Landmark, Crown, Receipt, Banknote, Paperclip, Edit3 } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, AlertTriangle, UserCheck, Search, CalendarCheck, Landmark, Crown, Gavel, Receipt, Banknote, Paperclip } from 'lucide-react';
 import Modal from '../common/Modal';
 import StatusBadge from '../common/StatusBadge';
-import TravelRequestForm from './TravelRequestForm';
 import { useApp } from '../../context/AppContext';
-import { TRAVEL_HIGH_VALUE_THRESHOLD } from '../../data/permissions';
+import { BOARD_TREASURER_THRESHOLD } from '../../data/permissions';
 import { money, formatDate } from '../../utils/format';
-
-const REJECTED_STATUSES = ['rejected_hod', 'rejected_travel_officer', 'rejected_finance', 'rejected_ceo', 'rejected'];
 
 function TimelineIcon({ status }) {
   if (status === 'approved') return <div className="timeline-icon" style={{ background: 'var(--green-bg)', color: 'var(--green)' }}><CheckCircle2 size={14} /></div>;
@@ -30,51 +27,47 @@ function formatDateTime(dt) {
 
 export default function TravelDetail({ requestId, onClose }) {
   const {
-    travelRequests, budgets, projects, can, currentUser, requiresFinanceGate,
-    hodReview, qualityReview, confirmBooking, financeManagerReview,
-    ceoApprove, submitExpense, receiptCheck, ceoFinalApprove, financeManagerPay,
+    travelRequests, budgets, projects, can, currentUser,
+    hodReview, qualityReview, confirmBooking, financeManagerReview, resolveFinanceHold,
+    ceoApprove, boardTreasurerSign, submitExpense, receiptCheck, financeManagerPay,
   } = useApp();
   const tr = travelRequests.find((t) => t.id === requestId);
   const [comment, setComment] = useState('');
-  // One booking reference per itinerary leg — a multi-leg trip can involve several separate
-  // flight/accommodation bookings (2026-09-10). Keyed by leg index rather than a fixed-length
-  // array so it stays correct regardless of which request is currently open.
-  const [legRefs, setLegRefs] = useState({});
+  const [bookingRef, setBookingRef] = useState('');
   const [actualCost, setActualCost] = useState('');
+  const [holdBudget, setHoldBudget] = useState('');
+  const [holdCost, setHoldCost] = useState('');
   const [expForm, setExpForm] = useState({ category: 'Accommodation', amount: '', description: '', receiptName: '', client: '', town: '', programme: '', activity: '' });
-  const [showEditForm, setShowEditForm] = useState(false);
 
   if (!tr) return null;
   const budget = budgets.find((b) => b.id === tr.budgetId);
   const project = projects.find((p) => p.id === tr.projectId);
 
   const canHod = can('travel', 'hodReview') && tr.status === 'pending_hod';
-  const canQuality = can('travel', 'qualityReview') && tr.status === 'pending_travel_officer';
+  const canQuality = can('travel', 'qualityReview') && tr.status === 'pending_quality';
   const canBook = can('travel', 'book') && tr.status === 'pending_booking';
+  const canResolveHold = can('travel', 'book') && tr.status === 'finance_hold';
   const canFinanceReview = can('travel', 'financeReview') && tr.status === 'pending_finance_review';
   const canCeo = can('travel', 'ceoApprove') && tr.status === 'pending_ceo';
-  const canCeoFinal = can('travel', 'ceoApprove') && tr.status === 'pending_ceo_final';
-  // Per the process diagram, the Travel Officer (not just the traveller) can complete the
-  // post-travel expense claim/report — flagged as an assumption for Brent to confirm.
-  const canSubmitExpense = (tr.requesterId === currentUser.id || can('travel', 'receiptCheck')) && ['cleared_for_travel', 'reimbursement_hold'].includes(tr.status);
+  const canBoard = can('travel', 'boardSign') && tr.status === 'pending_board';
+  const canSubmitExpense = tr.requesterId === currentUser.id && ['cleared_for_travel', 'reimbursement_hold'].includes(tr.status);
   const canReceiptCheck = can('travel', 'receiptCheck') && tr.status === 'expense_review';
   const canPay = can('travel', 'pay') && tr.status === 'pending_payment';
-  const canResubmit = tr.requesterId === currentUser.id && REJECTED_STATUSES.includes(tr.status);
 
-  const noActionAvailable = !canHod && !canQuality && !canBook && !canFinanceReview
-    && !canCeo && !canCeoFinal && !canSubmitExpense && !canReceiptCheck && !canPay && !canResubmit;
+  const noActionAvailable = !canHod && !canQuality && !canBook && !canResolveHold && !canFinanceReview
+    && !canCeo && !canBoard && !canSubmitExpense && !canReceiptCheck && !canPay;
 
   const clearComment = () => setComment('');
 
   return (
-    <Modal open onClose={onClose} size="lg" title={tr.requestNumber ? `${tr.requestNumber} — ${tr.destination}` : `${tr.id} — ${tr.destination}`} subtitle={`Submitted by ${tr.requesterName} on ${formatDate(tr.createdDate)}`}>
+    <Modal open onClose={onClose} size="lg" title={`${tr.id} — ${tr.destination}`} subtitle={`Submitted by ${tr.requesterName} on ${formatDate(tr.createdDate)}`}>
       <div className="grid grid-2" style={{ alignItems: 'start', gap: 20 }}>
         <div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <StatusBadge status={tr.status} />
+            {tr.status === 'finance_hold' && <span className="badge badge-red"><AlertTriangle size={11} /> Returned to Bookkeeper/Finance</span>}
             {tr.status === 'reimbursement_hold' && <span className="badge badge-red"><AlertTriangle size={11} /> Missing documentation</span>}
-            {REJECTED_STATUSES.includes(tr.status) && <span className="badge badge-red"><AlertTriangle size={11} /> Returned — edit and resubmit</span>}
-            {requiresFinanceGate(tr) && <span className="badge badge-amber"><Landmark size={11} /> Over budget or R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — requires Finance review</span>}
+            {tr.boardTreasurer.required && <span className="badge badge-amber"><Gavel size={11} /> Above R{BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold</span>}
           </div>
 
           <div className="kv-list" style={{ marginBottom: 16 }}>
@@ -82,10 +75,9 @@ export default function TravelDetail({ requestId, onClose }) {
             <div className="kv-row"><span className="k">Dates</span><span className="v">{formatDate(tr.startDate)} – {formatDate(tr.endDate)}</span></div>
             <div className="kv-row"><span className="k">Department</span><span className="v">{tr.department}</span></div>
             <div className="kv-row"><span className="k">Project</span><span className="v">{project?.name || tr.projectId || '—'}</span></div>
-            <div className="kv-row"><span className="k">Request Number</span><span className="v">{tr.requestNumber || '—'}</span></div>
             <div className="kv-row"><span className="k">Estimated Cost</span><span className="v">{money(tr.estimatedCost)}</span></div>
             {tr.booking.actualCost != null && <div className="kv-row"><span className="k">Actual (booked) Cost</span><span className="v">{money(tr.booking.actualCost)}</span></div>}
-            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget ? `${budget.groupName} — ${budget.name}` : tr.budgetId}</span></div>
+            <div className="kv-row"><span className="k">Budget Line</span><span className="v">{budget?.name || tr.budgetId}</span></div>
             <div className="kv-row"><span className="k">S&T's Advance Required</span><span className="v">{tr.sntAdvanceRequired ? 'Yes' : 'No'}</span></div>
             {tr.travelJustification && <div className="kv-row"><span className="k">Travel Justification</span><span className="v">{tr.travelJustification}</span></div>}
           </div>
@@ -112,9 +104,7 @@ export default function TravelDetail({ requestId, onClose }) {
                       <div className="kv-row"><span className="k">Departs</span><span className="v">{formatDateTime(leg.departDateTime)}</span></div>
                       {leg.roundTrip && <div className="kv-row"><span className="k">Returns</span><span className="v">{formatDateTime(leg.returnDateTime)}</span></div>}
                       <div className="kv-row"><span className="k">Rental Car</span><span className="v">{RENTAL_CAR_LABELS[leg.rentalCar] || 'Not required'}</span></div>
-                      {leg.rentalCar === 'O' && leg.oClassReason && <div className="kv-row"><span className="k">Reason for O Class</span><span className="v">{leg.oClassReason}</span></div>}
                       {leg.secondDriverRequired && leg.secondDriverName && <div className="kv-row"><span className="k">Second Driver</span><span className="v">{leg.secondDriverName}</span></div>}
-                      {leg.bookingRef && <div className="kv-row"><span className="k">Booking Reference</span><span className="v">{leg.bookingRef}</span></div>}
                       {leg.accommodationRequired && <div className="kv-row"><span className="k">Accommodation</span><span className="v">{leg.accommodationDetails || 'Required — details not specified'}</span></div>}
                     </div>
                   </div>
@@ -123,7 +113,7 @@ export default function TravelDetail({ requestId, onClose }) {
             </div>
           )}
 
-          <div className="section-title">Approval Chain</div>
+          <div className="section-title">Six-Stage Approval Chain</div>
           <div className="timeline">
             <div className="timeline-step">
               <TimelineIcon status={tr.hod.status} />
@@ -136,59 +126,59 @@ export default function TravelDetail({ requestId, onClose }) {
             <div className="timeline-step">
               <TimelineIcon status={tr.travelOffice.status === 'not_started' ? 'not_started' : tr.travelOffice.status} />
               <div>
-                <div className="timeline-title">2. Travel Officer — Review & Approve {tr.travelOffice.approverName && `(${tr.travelOffice.approverName})`}</div>
+                <div className="timeline-title">2. Travel Office — Quality Review {tr.travelOffice.approverName && `(${tr.travelOffice.approverName})`}</div>
                 <div className="timeline-meta">{tr.travelOffice.date ? formatDate(tr.travelOffice.date) : (tr.travelOffice.status === 'not_started' ? 'Not yet reached' : 'Links, availability, policy compliance (FIN-04-CHK-01)')}</div>
                 {tr.travelOffice.comment && <div className="timeline-comment">{tr.travelOffice.comment}</div>}
-              </div>
-            </div>
-            {tr.financeReview.status !== 'not_started' && (
-              <div className="timeline-step">
-                <TimelineIcon status={tr.financeReview.status} />
-                <div>
-                  <div className="timeline-title">Finance — Budget & Policy Review {tr.financeReview.approverName && `(${tr.financeReview.approverName})`}</div>
-                  <div className="timeline-meta">{tr.financeReview.date ? formatDate(tr.financeReview.date) : 'Over budget or R50,000 — reviewing before CEO approval'}</div>
-                  {tr.financeReview.comment && <div className="timeline-comment">{tr.financeReview.comment}</div>}
-                </div>
-              </div>
-            )}
-            <div className="timeline-step">
-              <TimelineIcon status={tr.ceo.status === 'not_started' ? 'not_started' : tr.ceo.status} />
-              <div>
-                <div className="timeline-title">CEO Approval {tr.ceo.approverName && `(${tr.ceo.approverName})`}</div>
-                <div className="timeline-meta">{tr.ceo.date ? formatDate(tr.ceo.date) : (tr.ceo.status === 'not_started' ? 'Not yet reached' : 'Awaiting approval')}</div>
-                {tr.ceo.comment && <div className="timeline-comment">{tr.ceo.comment}</div>}
               </div>
             </div>
             <div className="timeline-step">
               <TimelineIcon status={tr.booking.confirmed ? 'approved' : 'not_started'} />
               <div>
-                <div className="timeline-title">Travel Officer — Book & Record</div>
+                <div className="timeline-title">3. Bookkeeper/Finance — Book & Record in Xero</div>
                 <div className="timeline-meta">{tr.booking.confirmed ? `Ref ${tr.booking.bookingRef} · ${formatDate(tr.booking.bookedDate)} by ${tr.booking.bookedByName}` : 'Not yet reached'}</div>
                 {tr.booking.confirmed && <div className="timeline-comment">Actual cost recorded: {money(tr.booking.actualCost)}</div>}
               </div>
             </div>
+            <div className="timeline-step">
+              <TimelineIcon status={tr.financeReview.status === 'not_started' ? 'not_started' : tr.financeReview.status} />
+              <div>
+                <div className="timeline-title">4. Finance Manager — Budget & Policy Review {tr.financeReview.approverName && `(${tr.financeReview.approverName})`}</div>
+                <div className="timeline-meta">{tr.financeReview.date ? formatDate(tr.financeReview.date) : (tr.financeReview.status === 'not_started' ? 'Not yet reached' : 'Reviewing financial commitment')}</div>
+                {tr.financeReview.comment && <div className="timeline-comment">{tr.financeReview.comment}</div>}
+              </div>
+            </div>
+            <div className="timeline-step">
+              <TimelineIcon status={tr.ceo.status === 'not_started' ? 'not_started' : tr.ceo.status} />
+              <div>
+                <div className="timeline-title">5. CEO Approval {tr.ceo.approverName && `(${tr.ceo.approverName})`}</div>
+                <div className="timeline-meta">{tr.ceo.date ? formatDate(tr.ceo.date) : (tr.ceo.status === 'not_started' ? 'Not yet reached' : 'Awaiting approval')}</div>
+                {tr.ceo.comment && <div className="timeline-comment">{tr.ceo.comment}</div>}
+              </div>
+            </div>
+            {tr.boardTreasurer.required && (
+              <div className="timeline-step">
+                <TimelineIcon status={tr.boardTreasurer.status === 'not_started' ? 'not_started' : tr.boardTreasurer.status} />
+                <div>
+                  <div className="timeline-title">6. Board Treasurer — Counter-signature {tr.boardTreasurer.approverName && `(${tr.boardTreasurer.approverName})`}</div>
+                  <div className="timeline-meta">{tr.boardTreasurer.date ? formatDate(tr.boardTreasurer.date) : 'High-value trip — required above threshold'}</div>
+                  {tr.boardTreasurer.comment && <div className="timeline-comment">{tr.boardTreasurer.comment}</div>}
+                </div>
+              </div>
+            )}
             {tr.expenses.length > 0 && (
               <>
                 <div className="timeline-step">
                   <TimelineIcon status={tr.receiptCheck.status === 'not_started' ? 'not_started' : tr.receiptCheck.status} />
                   <div>
-                    <div className="timeline-title">Travel Officer — Receipt Check {tr.receiptCheck.approverName && `(${tr.receiptCheck.approverName})`}</div>
+                    <div className="timeline-title">Travel Office — Receipt Check {tr.receiptCheck.approverName && `(${tr.receiptCheck.approverName})`}</div>
                     <div className="timeline-meta">{tr.receiptCheck.date ? formatDate(tr.receiptCheck.date) : 'Checking receipts against itinerary & policy'}</div>
                     {tr.receiptCheck.comment && <div className="timeline-comment">{tr.receiptCheck.comment}</div>}
                   </div>
                 </div>
                 <div className="timeline-step">
-                  <TimelineIcon status={tr.ceoFinal.status === 'not_started' ? 'not_started' : tr.ceoFinal.status} />
-                  <div>
-                    <div className="timeline-title">CEO — Final Approval {tr.ceoFinal.approverName && `(${tr.ceoFinal.approverName})`}</div>
-                    <div className="timeline-meta">{tr.ceoFinal.date ? formatDate(tr.ceoFinal.date) : (tr.ceoFinal.status === 'not_started' ? 'Not yet reached' : 'Awaiting final approval')}</div>
-                    {tr.ceoFinal.comment && <div className="timeline-comment">{tr.ceoFinal.comment}</div>}
-                  </div>
-                </div>
-                <div className="timeline-step">
                   <TimelineIcon status={tr.reimbursement.status === 'paid' ? 'approved' : 'pending'} />
                   <div>
-                    <div className="timeline-title">Finance — Review & Pay</div>
+                    <div className="timeline-title">Finance Manager — Record & Pay</div>
                     <div className="timeline-meta">{tr.reimbursement.status === 'paid' ? `Paid ${money(tr.reimbursement.amount)} on ${formatDate(tr.reimbursement.processedDate)}` : 'Awaiting payment'}</div>
                   </div>
                 </div>
@@ -210,9 +200,8 @@ export default function TravelDetail({ requestId, onClose }) {
           )}
 
           {canQuality && (
-            <ActionCard icon={Search} title="Stage 2 — Travel Officer Review">
-              <p className="hint" style={{ marginBottom: 8 }}>Check link validity, availability, and policy compliance (FIN-04-CHK-01). Estimated cost {money(tr.estimatedCost)}{budget ? ` against ${budget.name} — ${money(budget.allocated - budget.committed - budget.spent)} available` : ''}.</p>
-              {requiresFinanceGate(tr) && <p className="hint" style={{ marginBottom: 8 }}>Over budget or above R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — approving will route this to Finance for review before the CEO.</p>}
+            <ActionCard icon={Search} title="Stage 2 — Travel Office Quality Review">
+              <p className="hint" style={{ marginBottom: 8 }}>Check link validity, availability, and policy compliance (FIN-04-CHK-01).</p>
               <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-block" onClick={() => { qualityReview(tr.id, true, comment); clearComment(); }}>Passes — Approve</button>
@@ -221,20 +210,44 @@ export default function TravelDetail({ requestId, onClose }) {
             </ActionCard>
           )}
 
+          {canBook && (
+            <ActionCard icon={CalendarCheck} title="Stage 3 — Book Flights & Accommodation">
+              <div className="field"><label>Booking Reference</label><input className="input" value={bookingRef} onChange={(e) => setBookingRef(e.target.value)} placeholder="e.g. BK-99123" /></div>
+              <div className="field"><label>Actual Cost (ZAR, for Xero)</label><input type="number" className="input" value={actualCost} onChange={(e) => setActualCost(e.target.value)} placeholder={tr.estimatedCost} /></div>
+              <button className="btn btn-primary btn-block" disabled={!bookingRef || !actualCost} onClick={() => confirmBooking(tr.id, bookingRef, Number(actualCost))}>Confirm Booking & Record in Xero</button>
+            </ActionCard>
+          )}
+
+          {canResolveHold && (
+            <ActionCard icon={AlertTriangle} title="Resolve Finance Hold">
+              <p className="hint" style={{ marginBottom: 8 }}>Finance Manager returned this trip. Adjust the booking and/or reassign the budget line, then resubmit for review.</p>
+              <div className="field"><label>Reassign Budget Line</label>
+                <select className="input" value={holdBudget} onChange={(e) => setHoldBudget(e.target.value)}>
+                  <option value="">Keep current budget line</option>
+                  {budgets.filter((b) => b.id !== tr.budgetId).map((b) => <option key={b.id} value={b.id}>{b.name} — {money(b.allocated - b.committed - b.spent)} available</option>)}
+                </select>
+              </div>
+              <div className="field"><label>Revised Actual Cost (optional)</label><input type="number" className="input" value={holdCost} onChange={(e) => setHoldCost(e.target.value)} placeholder={tr.booking.actualCost} /></div>
+              <button className="btn btn-primary btn-block" onClick={() => { resolveFinanceHold(tr.id, holdBudget || undefined, holdCost); setHoldBudget(''); setHoldCost(''); }}>Resubmit for Finance Review</button>
+            </ActionCard>
+          )}
+
           {canFinanceReview && (
-            <ActionCard icon={Landmark} title="Finance Review">
-              <p className="hint" style={{ marginBottom: 8 }}>Estimated cost {money(tr.estimatedCost)} against {budget?.name || tr.budgetId} — {money(budget ? budget.allocated - budget.committed - budget.spent : 0)} currently available.</p>
+            <ActionCard icon={Landmark} title="Stage 4 — Finance Manager Review">
+              <p className="hint" style={{ marginBottom: 8 }}>Booked cost {money(tr.booking.actualCost || 0)} against {budget?.name || tr.budgetId} — {money(budget ? budget.allocated - budget.committed - budget.spent : 0)} currently available.</p>
               <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-block" onClick={() => { financeManagerReview(tr.id, true, comment); clearComment(); }}>Within Budget & Policy</button>
-                <button className="btn btn-danger btn-block" onClick={() => { financeManagerReview(tr.id, false, comment); clearComment(); }}>Return to Requester</button>
+                <button className="btn btn-danger btn-block" onClick={() => { financeManagerReview(tr.id, false, comment); clearComment(); }}>Return to Bookkeeper/Finance</button>
               </div>
             </ActionCard>
           )}
 
           {canCeo && (
-            <ActionCard icon={Crown} title="CEO Approval">
-              <p className="hint" style={{ marginBottom: 8 }}>Estimated cost {money(tr.estimatedCost)}. Approving forwards this to the Travel Officer to book.</p>
+            <ActionCard icon={Crown} title="Stage 5 — CEO Approval">
+              {(tr.booking.actualCost || tr.estimatedCost) > BOARD_TREASURER_THRESHOLD && (
+                <p className="hint" style={{ marginBottom: 8 }}>This trip is above the R{BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold — approving will route it to the Board Treasurer for counter-signature.</p>
+              )}
               <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-block" onClick={() => { ceoApprove(tr.id, true, comment); clearComment(); }}>Approve Trip</button>
@@ -243,30 +256,14 @@ export default function TravelDetail({ requestId, onClose }) {
             </ActionCard>
           )}
 
-          {canBook && (
-            <ActionCard icon={CalendarCheck} title="Book Flights & Accommodation">
-              {tr.itinerary.length > 1 && <p className="hint" style={{ marginBottom: 8 }}>This trip has {tr.itinerary.length} legs — give each its own booking reference (e.g. separate flights).</p>}
-              {tr.itinerary.map((leg, i) => (
-                <div className="field" key={leg.id || i}>
-                  <label>Booking Reference — Leg {i + 1}: {leg.destination || 'Untitled destination'} ({TRAVEL_TYPE_LABELS[leg.travelType] || leg.travelType})</label>
-                  <input className="input" value={legRefs[i] || ''} onChange={(e) => setLegRefs((r) => ({ ...r, [i]: e.target.value }))} placeholder="e.g. BK-99123" />
-                </div>
-              ))}
-              <div className="field"><label>Actual Cost (ZAR)</label><input type="number" className="input" value={actualCost} onChange={(e) => setActualCost(e.target.value)} placeholder={tr.estimatedCost} /></div>
-              <button
-                className="btn btn-primary btn-block"
-                disabled={!actualCost || tr.itinerary.some((_, i) => !legRefs[i])}
-                onClick={() => confirmBooking(tr.id, tr.itinerary.map((_, i) => legRefs[i] || ''), Number(actualCost))}
-              >
-                Confirm Booking & Record — Cleared for Travel
-              </button>
-            </ActionCard>
-          )}
-
-          {canResubmit && (
-            <ActionCard icon={Edit3} title="Returned — Edit & Resubmit">
-              <p className="hint" style={{ marginBottom: 10 }}>{tr.hod.comment || tr.travelOffice.comment || tr.financeReview.comment || tr.ceo.comment || 'This request was returned.'} Edit the details below and resubmit — it will restart at HOD review.</p>
-              <button className="btn btn-primary btn-block" onClick={() => setShowEditForm(true)}>Edit & Resubmit Request</button>
+          {canBoard && (
+            <ActionCard icon={Gavel} title="Stage 6 — Board Treasurer Counter-signature">
+              <p className="hint" style={{ marginBottom: 8 }}>High-value trip — {money(tr.booking.actualCost || tr.estimatedCost)}, above the R{BOARD_TREASURER_THRESHOLD.toLocaleString()} threshold.</p>
+              <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary btn-block" onClick={() => { boardTreasurerSign(tr.id, true, comment); clearComment(); }}>Counter-sign</button>
+                <button className="btn btn-danger btn-block" onClick={() => { boardTreasurerSign(tr.id, false, comment); clearComment(); }}>Decline</button>
+              </div>
             </ActionCard>
           )}
 
@@ -324,27 +321,12 @@ export default function TravelDetail({ requestId, onClose }) {
             </ActionCard>
           )}
 
-          {canCeoFinal && (
-            <ActionCard icon={Crown} title="CEO Final Approval">
-              <p className="hint" style={{ marginBottom: 8 }}>Final sign-off on the completed trip and expense claim before Finance issues payment.</p>
-              <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-block" onClick={() => { ceoFinalApprove(tr.id, true, comment); clearComment(); }}>Approve</button>
-                <button className="btn btn-danger btn-block" onClick={() => { ceoFinalApprove(tr.id, false, comment || 'Corrections needed'); clearComment(); }}>Return for Corrections</button>
-              </div>
-            </ActionCard>
-          )}
-
           {canPay && (
-            <ActionCard icon={Banknote} title="Finance — Review & Pay">
+            <ActionCard icon={Banknote} title="Record Expense & Issue Payment">
               <div className="kv-list" style={{ marginBottom: 10 }}>
                 <div className="kv-row"><span className="k"><strong>Total to pay</strong></span><span className="v"><strong>{money(tr.expenses.reduce((s, e) => s + e.amount, 0))}</strong></span></div>
               </div>
-              <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-block" onClick={() => { financeManagerPay(tr.id, true, comment); clearComment(); }}>Approve & Pay</button>
-                <button className="btn btn-danger btn-block" onClick={() => { financeManagerPay(tr.id, false, comment || 'Corrections needed'); clearComment(); }}>Return for Corrections</button>
-              </div>
+              <button className="btn btn-primary btn-block" onClick={() => financeManagerPay(tr.id)}>Record & Pay</button>
             </ActionCard>
           )}
 
@@ -376,7 +358,6 @@ export default function TravelDetail({ requestId, onClose }) {
           )}
         </div>
       </div>
-      {showEditForm && <TravelRequestForm open={showEditForm} onClose={() => { setShowEditForm(false); onClose(); }} editRequest={tr} />}
     </Modal>
   );
 }

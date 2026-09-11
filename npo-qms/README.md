@@ -1,6 +1,6 @@
 # Angels Resource Centre — NPO Management System (Prototype)
 
-A React single-page application prototype for managing an NPO's Travel, Finance, and Document Control workflows, with full role-based access control (RBAC) across nine roles. Travel Management follows the approval chain rebuilt 2026-09-11 from Brent's process flow diagram — Operational/HOD → Travel Officer (review & approve) → Finance (conditional — only when the trip is over budget or above R50,000) → CEO approval → Travel Officer books flights & accommodation → travel happens → Travel Officer/traveller submits the expense claim → Travel Officer receipt check → CEO final approval → Finance's active review & payment. Rejections at any pre-booking stage are resubmittable, restarting at HOD. The Board Treasurer role/step from the original ATMS-FRM-001 chain has been removed.
+A React single-page application prototype for managing an NPO's Travel, Finance, and Document Control workflows, with full role-based access control (RBAC) across nine roles. Travel Management follows the six-stage internal approval chain from "Angels Business Travel — Approval & Reimbursement Workflow" (source: ATMS-FRM-001) — Operational/HOD → Travel Office → Bookkeeper/Finance → Finance Manager → CEO → Board Treasurer (conditional, trips above R50,000) — followed by a Travel Office receipt check and Finance Manager payment.
 
 Data is persisted in a real Supabase (Postgres) database — every action (submitting a request, approving, uploading a document, etc.) is written through, and reloading the page fetches the current state from the database. Role access is still controlled client-side via a demo role switcher (see below) rather than real per-person login; the database itself has Row Level Security enabled but with fully open policies, since there's no auth layer yet to check against.
 
@@ -21,7 +21,7 @@ Then open the printed local URL (typically `http://localhost:5173`).
 
 ## Database
 
-The schema lives in the `npo_portal_*` tables (`npo_portal_users`, `npo_portal_budgets`, `npo_portal_travel_requests`, `npo_portal_travel_expenses`, `npo_portal_invoices`, `npo_portal_documents`, `npo_portal_document_versions`, `npo_portal_audit_log`) — namespaced this way because the Supabase project is shared with a few other apps. Each stage of the travel approval chain (`hod`, `travel_office`, `booking`, `finance_review`, `ceo`, `ceo_final`, `board_treasurer` — unused since the 2026-09-11 rebuild, kept for backward compatibility, `receipt_check`) plus `reimbursement` is stored as a `jsonb` column on `npo_portal_travel_requests` rather than flattened into separate tables, which keeps the mapping between the database and the UI's data shapes simple — see `src/lib/mappers.js`.
+The schema lives in the `npo_portal_*` tables (`npo_portal_users`, `npo_portal_budgets`, `npo_portal_travel_requests`, `npo_portal_travel_expenses`, `npo_portal_invoices`, `npo_portal_documents`, `npo_portal_document_versions`, `npo_portal_audit_log`) — namespaced this way because the Supabase project is shared with a few other apps. Each stage of the travel approval chain (`hod`, `travel_office`, `booking`, `finance_review`, `ceo`, `board_treasurer`, `receipt_check`) plus `reimbursement` is stored as a `jsonb` column on `npo_portal_travel_requests` rather than flattened into separate tables, which keeps the mapping between the database and the UI's data shapes simple — see `src/lib/mappers.js`.
 
 `src/lib/supabaseClient.js` creates the Supabase client from the `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` environment variables. `src/context/AppContext.jsx` loads all tables on startup and writes through to Supabase on every action, while still updating local React state immediately for a responsive UI.
 
@@ -42,12 +42,12 @@ Use the role switcher in the top-right corner of the header to demo the app as a
 
 - **Admin** (Thandiwe Mokoena) — full access, user management
 - **Staff** (Lindiwe Zulu) — Traveller/Requester: submits travel requests & expense claims, uploads documents
-- **Operational/HOD** (David Okafor) — reviews business justification, dates & policy alignment
-- **Travel Office** (Karabo Mahlangu) — reviews & approves travel requests, books flights & accommodation, and runs the post-travel receipt check
-- **Bookkeeper/Finance** (Ayesha Patel) — verifies documentation and processes payment for Finance Hub requests (no longer involved in Travel booking as of the 2026-09-11 rebuild)
-- **Finance Manager** (Sarah Naidoo) — conditional pre-booking review of over-budget/over-R50,000 trips; active review & payment of post-travel expense claims
-- **CEO** (Dr. Nomsa Khumalo) — approves trips before booking, and gives final approval on the completed expense claim
-- **Board Treasurer** (Willem Botha) — no longer used in the Travel approval chain as of the 2026-09-11 rebuild
+- **Operational/HOD** (David Okafor) — Stage 1: reviews business justification, dates & policy alignment
+- **Travel Office** (Karabo Mahlangu) — Stages 2 & 6: quality review (links, availability, policy per FIN-04-CHK-01) and post-travel receipt checks
+- **Bookkeeper/Finance** (Ayesha Patel) — Stage 3: books flights & accommodation, records confirmations and costs in Xero
+- **Finance Manager** (Sarah Naidoo) — Stages 4 & 7: reviews financial commitment against budget & policy, records expenses and issues payment
+- **CEO** (Dr. Nomsa Khumalo) — Stage 5: approves trips, including routing above-threshold trips to the Board Treasurer
+- **Board Treasurer** (Willem Botha) — Stage 6 (conditional): counter-signs trips above R50,000
 - **Auditor** (Michael Chen) — read-only access across all modules
 
 Switching roles re-renders the entire app against a live RBAC permission matrix (`src/data/permissions.js`) — sidebar items, buttons, tabs, and available actions all change accordingly.
@@ -77,9 +77,9 @@ src/
 
 Since data is now shared through a real database rather than reset-on-refresh mock state, anything you do here is visible to everyone else using this deployment (and stays there until someone changes it again) — worth keeping in mind if several people are poking at the demo at once.
 
-1. **Travel approval chain**: as Staff, submit a new travel request. Switch to Operational/HOD to review justification, then Travel Officer to review & approve — trips over budget or above R50,000 route to Finance for review first, otherwise straight to CEO. Once the CEO approves, switch back to Travel Officer to book flights & accommodation, which clears the trip for travel.
-2. **Resubmitting a rejection**: return a request at any pre-booking stage (HOD, Travel Officer, Finance, or CEO) with a comment — as the requester (Staff), open it in Travel Management and use "Edit & Resubmit" to fix it up and restart at HOD review.
-3. **Expense & reimbursement**: on a request cleared for travel, submit an expense claim with a mock receipt as the requester (or as Travel Officer, on the traveller's behalf) — claims are tagged Client · Town · Programme · Activity. Switch to Travel Officer to check receipts, then CEO for final approval, then Finance to actively review and issue payment. A rejection at any of these three post-travel stages sends the claim back to the requester for corrections.
+1. **Six-stage travel approval chain**: as Staff, submit a new travel request (`TR-3001` is pre-seeded awaiting this stage too). Switch to Operational/HOD to review justification, then Travel Office for quality review, then Bookkeeper/Finance to book & record the actual cost, then Finance Manager to review against budget & policy, then CEO to approve. Trips booked above R50,000 (like `TR-3007`) route to Board Treasurer for counter-signature before being cleared for travel.
+2. **Finance hold**: `TR-3005` (Bloemfontein) is pre-seeded on finance hold — as Bookkeeper/Finance, open it in Travel Management, optionally reassign the budget line, and resubmit for Finance Manager review.
+3. **Expense & reimbursement**: on a request cleared for travel (like `TR-3008`), submit an expense claim with a mock receipt as the requester — claims are tagged Client · Town · Programme · Activity. Switch to Travel Office to check receipts, then Finance Manager to record the expense and issue payment. `TR-3010` is pre-seeded needing corrections — resubmit as the requester (Staff) to see the loop close.
 4. **Invoice two-tier payment approval** (Finance module, separate from Travel): submit an invoice as Admin/Finance Manager, approve Level 1 as Finance Manager, then approve Level 2 (payment release) as Admin.
 5. **Document version control**: open any document, upload a new version, then approve it as Finance Manager/Admin — note the compliance checklist and version history.
 6. **Reports**: Finance Management → Reports & Export has working CSV exports (Budget vs Actual, Expenses, Invoices, Reimbursements), and the Audit Log page also exports CSV.
