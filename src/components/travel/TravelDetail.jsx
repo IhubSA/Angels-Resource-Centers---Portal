@@ -140,7 +140,7 @@ export default function TravelDetail({ requestId, onClose }) {
             <div className="timeline-step">
               <TimelineIcon status={tr.booking.confirmed ? 'approved' : 'not_started'} />
               <div>
-                <div className="timeline-title">3. Bookkeeper/Finance — Book & Record in Xero</div>
+                <div className="timeline-title">3. Bookkeeper/Finance — Book & Record</div>
                 <div className="timeline-meta">{tr.booking.confirmed ? `Ref ${tr.booking.bookingRef} · ${formatDate(tr.booking.bookedDate)} by ${tr.booking.bookedByName}` : 'Not yet reached'}</div>
                 {tr.booking.confirmed && <div className="timeline-comment">Actual cost recorded: {money(tr.booking.actualCost)}</div>}
               </div>
@@ -225,13 +225,13 @@ export default function TravelDetail({ requestId, onClose }) {
                   <input className="input" value={legRefs[i] || ''} onChange={(e) => setLegRefs((r) => ({ ...r, [i]: e.target.value }))} placeholder="e.g. BK-99123" />
                 </div>
               ))}
-              <div className="field"><label>Actual Cost (ZAR, for Xero)</label><input type="number" className="input" value={actualCost} onChange={(e) => setActualCost(e.target.value)} placeholder={tr.estimatedCost} /></div>
+              <div className="field"><label>Actual Cost (ZAR)</label><input type="number" className="input" value={actualCost} onChange={(e) => setActualCost(e.target.value)} placeholder={tr.estimatedCost} /></div>
               <button
                 className="btn btn-primary btn-block"
                 disabled={!actualCost || tr.itinerary.some((_, i) => !legRefs[i])}
                 onClick={() => confirmBooking(tr.id, tr.itinerary.map((_, i) => legRefs[i] || ''), Number(actualCost))}
               >
-                Confirm Booking & Record in Xero
+                Confirm Booking & Record
               </button>
             </ActionCard>
           )}

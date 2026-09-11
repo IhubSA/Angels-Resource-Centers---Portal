@@ -44,7 +44,7 @@ Use the role switcher in the top-right corner of the header to demo the app as a
 - **Staff** (Lindiwe Zulu) — Traveller/Requester: submits travel requests & expense claims, uploads documents
 - **Operational/HOD** (David Okafor) — Stage 1: reviews business justification, dates & policy alignment
 - **Travel Office** (Karabo Mahlangu) — Stages 2 & 6: quality review (links, availability, policy per FIN-04-CHK-01) and post-travel receipt checks
-- **Bookkeeper/Finance** (Ayesha Patel) — Stage 3: books flights & accommodation, records confirmations and costs in Xero
+- **Bookkeeper/Finance** (Ayesha Patel) — Stage 3: books flights & accommodation, records confirmations and costs
 - **Finance Manager** (Sarah Naidoo) — Stages 4 & 7: reviews financial commitment against budget & policy, records expenses and issues payment
 - **CEO** (Dr. Nomsa Khumalo) — Stage 5: approves trips, including routing above-threshold trips to the Board Treasurer
 - **Board Treasurer** (Willem Botha) — Stage 6 (conditional): counter-signs trips above R50,000

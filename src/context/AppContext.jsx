@@ -380,7 +380,7 @@ export function AppProvider({ children }) {
     }));
   }, [currentUser, log, notify, showToast, persistUpdate]);
 
-  // Stage 3 — Bookkeeper/Finance: book flights & accommodation; record confirmations and costs in Xero.
+  // Stage 3 — Bookkeeper/Finance: book flights & accommodation; record confirmations and costs.
   // legBookingRefs: an array of booking reference strings, one per itinerary leg (in leg
   // order) — a multi-leg trip can involve several separate flight/accommodation bookings,
   // each with its own reference, per Brent's request (2026-09-10). A single-leg trip is just
@@ -397,7 +397,7 @@ export function AppProvider({ children }) {
       const combinedRef = legBookingRefs.filter(Boolean).join(', ');
       const booking = { confirmed: true, bookedBy: currentUser.id, bookedByName: currentUser.name, bookingRef: combinedRef, bookedDate: today(), actualCost };
       const financeReview = { ...tr.financeReview, status: 'pending' };
-      log('Booked flights & accommodation', 'Travel', id, `${combinedRef} — recorded in Xero at R${actualCost.toLocaleString()}`);
+      log('Booked flights & accommodation', 'Travel', id, `${combinedRef} — recorded at R${actualCost.toLocaleString()}`);
       notify({ role: ROLES.FINANCE_MANAGER, title: 'Travel request awaiting financial review', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: id });
       showToast('Booking recorded — forwarded to Finance Manager for review');
       persistUpdate(TABLES.travelRequests, id, { booking, itinerary, finance_review: financeReview, status: 'pending_finance_review' }, 'booking confirmation');
