@@ -55,7 +55,7 @@ export default function TravelModule() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Travel Management</h1>
-          <p className="page-subtitle">HOD → Travel Officer → (Finance, if over budget or R50,000) → CEO → Travel Officer books, then expenses & reimbursement</p>
+          <p className="page-subtitle">HOD → Travel Officer → (Finance &amp; CEO, if over budget or R50,000) → Travel Officer books, then expenses &amp; reimbursement</p>
         </div>
         {can('travel', 'create') && (
           <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={15} /> New Travel Request</button>

@@ -43,6 +43,10 @@ export default function TravelDetail({ requestId, onClose }) {
   const [actualCost, setActualCost] = useState('');
   const [expForm, setExpForm] = useState({ category: 'Accommodation', amount: '', description: '', receiptName: '', client: '', town: '', programme: '', activity: '' });
   const [showEditForm, setShowEditForm] = useState(false);
+  // Pre-ticked from the automatic over-budget/R50,000 check, but the Travel Officer can
+  // override it either way — added 2026-09-11 per Brent's follow-up, since "Discussion with
+  // Finance" in the process diagram is a human judgment call, not purely a number check.
+  const [sendToFinance, setSendToFinance] = useState(tr ? requiresFinanceGate(tr) : false);
 
   if (!tr) return null;
   const budget = budgets.find((b) => b.id === tr.budgetId);
@@ -74,7 +78,7 @@ export default function TravelDetail({ requestId, onClose }) {
             <StatusBadge status={tr.status} />
             {tr.status === 'reimbursement_hold' && <span className="badge badge-red"><AlertTriangle size={11} /> Missing documentation</span>}
             {REJECTED_STATUSES.includes(tr.status) && <span className="badge badge-red"><AlertTriangle size={11} /> Returned — edit and resubmit</span>}
-            {requiresFinanceGate(tr) && <span className="badge badge-amber"><Landmark size={11} /> Over budget or R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — requires Finance review</span>}
+            {requiresFinanceGate(tr) && <span className="badge badge-amber"><Landmark size={11} /> Over budget or R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — requires Finance + CEO approval</span>}
           </div>
 
           <div className="kv-list" style={{ marginBottom: 16 }}>
@@ -141,7 +145,7 @@ export default function TravelDetail({ requestId, onClose }) {
                 {tr.travelOffice.comment && <div className="timeline-comment">{tr.travelOffice.comment}</div>}
               </div>
             </div>
-            {tr.financeReview.status !== 'not_started' && (
+            {(tr.financeReview.status !== 'not_started' || requiresFinanceGate(tr)) && (
               <div className="timeline-step">
                 <TimelineIcon status={tr.financeReview.status} />
                 <div>
@@ -151,14 +155,16 @@ export default function TravelDetail({ requestId, onClose }) {
                 </div>
               </div>
             )}
-            <div className="timeline-step">
-              <TimelineIcon status={tr.ceo.status === 'not_started' ? 'not_started' : tr.ceo.status} />
-              <div>
-                <div className="timeline-title">CEO Approval {tr.ceo.approverName && `(${tr.ceo.approverName})`}</div>
-                <div className="timeline-meta">{tr.ceo.date ? formatDate(tr.ceo.date) : (tr.ceo.status === 'not_started' ? 'Not yet reached' : 'Awaiting approval')}</div>
-                {tr.ceo.comment && <div className="timeline-comment">{tr.ceo.comment}</div>}
+            {(tr.ceo.status !== 'not_started' || requiresFinanceGate(tr)) && (
+              <div className="timeline-step">
+                <TimelineIcon status={tr.ceo.status === 'not_started' ? 'not_started' : tr.ceo.status} />
+                <div>
+                  <div className="timeline-title">CEO Approval {tr.ceo.approverName && `(${tr.ceo.approverName})`}</div>
+                  <div className="timeline-meta">{tr.ceo.date ? formatDate(tr.ceo.date) : (tr.ceo.status === 'not_started' ? 'Not yet reached' : 'Awaiting approval')}</div>
+                  {tr.ceo.comment && <div className="timeline-comment">{tr.ceo.comment}</div>}
+                </div>
               </div>
-            </div>
+            )}
             <div className="timeline-step">
               <TimelineIcon status={tr.booking.confirmed ? 'approved' : 'not_started'} />
               <div>
@@ -212,11 +218,14 @@ export default function TravelDetail({ requestId, onClose }) {
           {canQuality && (
             <ActionCard icon={Search} title="Stage 2 — Travel Officer Review">
               <p className="hint" style={{ marginBottom: 8 }}>Check link validity, availability, and policy compliance (FIN-04-CHK-01). Estimated cost {money(tr.estimatedCost)}{budget ? ` against ${budget.name} — ${money(budget.allocated - budget.committed - budget.spent)} available` : ''}.</p>
-              {requiresFinanceGate(tr) && <p className="hint" style={{ marginBottom: 8 }}>Over budget or above R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — approving will route this to Finance for review before the CEO.</p>}
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10, fontSize: 12.5 }}>
+                <input type="checkbox" checked={sendToFinance} onChange={(e) => setSendToFinance(e.target.checked)} style={{ marginTop: 2 }} />
+                <span>Over budget or over R{TRAVEL_HIGH_VALUE_THRESHOLD.toLocaleString()} — send for Finance &amp; CEO approval{requiresFinanceGate(tr) ? ' (suggested, based on estimated cost vs. budget)' : ''}</span>
+              </label>
               <textarea className="input" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ marginBottom: 10 }} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-block" onClick={() => { qualityReview(tr.id, true, comment); clearComment(); }}>Passes — Approve</button>
-                <button className="btn btn-danger btn-block" onClick={() => { qualityReview(tr.id, false, comment); clearComment(); }}>Return for Corrections</button>
+                <button className="btn btn-primary btn-block" onClick={() => { qualityReview(tr.id, true, comment, sendToFinance); clearComment(); }}>{sendToFinance ? 'Approve — Send to Finance & CEO' : 'Passes — Approve'}</button>
+                <button className="btn btn-danger btn-block" onClick={() => { qualityReview(tr.id, false, comment, sendToFinance); clearComment(); }}>Return for Corrections</button>
               </div>
             </ActionCard>
           )}

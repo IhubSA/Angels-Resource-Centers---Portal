@@ -257,11 +257,12 @@ export function AppProvider({ children }) {
 
   // ---------- Travel Management ----------
   // REBUILT 2026-09-11 per Brent's hand-drawn process flow diagram (see deployment-notes.md
-  // "part 11" for the full write-up). New chain:
+  // "part 11" for the full write-up; corrected same day per Brent's follow-up — CEO approval
+  // is NOT a universal step, only the over-budget/R50,000 path needs it). New chain:
   //   HOD review & approve -> Travel Officer review & approve
-  //     -> [conditional: estimated cost exceeds R50,000 or the Budget Line's available amount]
-  //        -> Finance review & approve
-  //     -> CEO approval ("Approved?")
+  //     -> IF estimated cost exceeds R50,000 or the Budget Line's available amount:
+  //          Finance review & approve -> CEO approval ("Approved?")
+  //     -> ELSE straight to booking, no Finance or CEO involvement at all
   //   -> Travel Officer books flights & accommodation -> cleared for travel
   //   -> (post-travel) traveller/Travel Officer submits expense claim
   //   -> Travel Officer receipt check -> CEO final approval -> Finance active review & payment
@@ -424,10 +425,13 @@ export function AppProvider({ children }) {
 
   // Stage 2 — Travel Officer: review & approve (merges the old separate quality-review and
   // booking roles into one — the Travel Officer who reviews the trip is also the one who
-  // books it later, at Stage 3). Approving here checks whether the estimated cost exceeds the
-  // Budget Line's available amount or R50,000 — if so, the trip needs a Finance review before
-  // CEO approval; otherwise it goes straight to the CEO.
-  const travelOfficerReview = useCallback((id, approve, comment) => {
+  // books it later, at Stage 3). Approving here decides — per the diagram's "Discussion with
+  // Finance" step — whether the trip needs a Finance + CEO gate before booking. The estimated
+  // cost vs. budget/R50,000 check (`requiresFinanceGate`) is offered as a pre-ticked suggestion
+  // in the UI, but the Travel Officer has the final say via `sendToFinance` (added 2026-09-11
+  // per Brent's follow-up) since real budget/policy judgment calls can't always be reduced to
+  // one number. `sendToFinance` of `null`/`undefined` falls back to the automatic check.
+  const travelOfficerReview = useCallback((id, approve, comment, sendToFinance) => {
     setTravelRequests((prev) => prev.map((tr) => {
       if (tr.id !== id) return tr;
       const travelOffice = { ...tr.travelOffice, approverId: currentUser.id, approverName: currentUser.name, status: approve ? 'approved' : 'rejected', date: today(), comment };
@@ -438,21 +442,23 @@ export function AppProvider({ children }) {
         persistUpdate(TABLES.travelRequests, id, { travel_office: travelOffice, status: 'rejected_travel_officer' }, 'travel request');
         return { ...tr, travelOffice, status: 'rejected_travel_officer' };
       }
-      const needsFinanceGate = requiresFinanceGate(tr);
+      const needsFinanceGate = sendToFinance != null ? sendToFinance : requiresFinanceGate(tr);
       if (needsFinanceGate) {
+        // Sent for Finance + CEO approval — either the automatic over-budget/R50,000 check
+        // tripped, or the Travel Officer chose to send it up anyway.
         const financeReview = { ...tr.financeReview, status: 'pending' };
-        log('Travel Officer approved — over budget/R50,000, routed to Finance', 'Travel', id, comment || tr.destination);
+        log('Travel Officer approved — sent for Finance & CEO approval', 'Travel', id, comment || tr.destination);
         notify({ role: ROLES.FINANCE_MANAGER, title: 'Travel request awaiting financial review', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: id });
-        showToast('Approved — over budget or R50,000, forwarded to Finance for review');
+        showToast('Approved — sent to Finance & CEO for approval');
         persistUpdate(TABLES.travelRequests, id, { travel_office: travelOffice, finance_review: financeReview, status: 'pending_finance_review' }, 'travel request');
         return { ...tr, travelOffice, financeReview, status: 'pending_finance_review' };
       }
-      const ceo = { ...tr.ceo, status: 'pending' };
-      log('Travel Officer approved travel request', 'Travel', id, comment || tr.destination);
-      notify({ role: ROLES.CEO, title: 'Travel request awaiting CEO approval', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: id });
-      showToast('Approved — forwarded to CEO');
-      persistUpdate(TABLES.travelRequests, id, { travel_office: travelOffice, ceo, status: 'pending_ceo' }, 'travel request');
-      return { ...tr, travelOffice, ceo, status: 'pending_ceo' };
+      // Not sent up for Finance/CEO approval — straight to booking.
+      log('Travel Officer approved travel request — ready to book', 'Travel', id, comment || tr.destination);
+      notify({ role: ROLES.TRAVEL_OFFICE, title: 'Travel request ready to book', message: `${tr.requesterName} — ${tr.destination}`, module: 'Travel', targetId: id });
+      showToast('Approved — ready to book (no Finance/CEO gate needed)');
+      persistUpdate(TABLES.travelRequests, id, { travel_office: travelOffice, status: 'pending_booking' }, 'travel request');
+      return { ...tr, travelOffice, status: 'pending_booking' };
     }));
   }, [currentUser, log, notify, showToast, persistUpdate, requiresFinanceGate]);
 
@@ -503,9 +509,10 @@ export function AppProvider({ children }) {
     }));
   }, [currentUser, log, notify, showToast, persistUpdate]);
 
-  // CEO — the "Approved?" gate. Reached either directly from the Travel Officer (low-value
-  // trips) or after Finance's review (trips over budget/R50,000). Approving sends the trip to
-  // the Travel Officer to book; declining is resubmittable, restarting at HOD.
+  // CEO — the "Approved?" gate, only reached for trips over budget or above R50,000, after
+  // Finance's review (low-value trips skip both Finance and CEO entirely and go straight from
+  // Travel Officer approval to booking — see `travelOfficerReview` above). Approving sends the
+  // trip to the Travel Officer to book; declining is resubmittable, restarting at HOD.
   const ceoApprove = useCallback((id, approve, comment) => {
     setTravelRequests((prev) => prev.map((tr) => {
       if (tr.id !== id) return tr;

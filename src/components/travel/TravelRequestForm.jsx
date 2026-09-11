@@ -327,7 +327,7 @@ export default function TravelRequestForm({ open, onClose, editRequest }) {
           </>
         )}
 
-        <p className="hint">Your request will route through: HOD → Travel Officer → (Finance, if over budget or R{'50,000'}) → CEO → Travel Officer books.</p>
+        <p className="hint">Your request will route through: HOD → Travel Officer → (Finance & CEO, if over budget or R{'50,000'}) → Travel Officer books.</p>
       </form>
     </Modal>
   );
